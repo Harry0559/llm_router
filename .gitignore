@@ -15,8 +15,8 @@ proxy/data/*.db
 proxy/data/*.db-shm
 proxy/data/*.db-wal
 
-# Local editor / agent settings
-.claude/settings.local.json
+# Local Claude Code / agent config (do not commit)
+.claude/
 
 .DS_Store
 Thumbs.db
