@@ -7,6 +7,7 @@ import { AGENT_LABELS } from '@/lib/types';
 import MessageViewer from './MessageViewer';
 import ResponseViewer from './ResponseViewer';
 import JsonViewer from './JsonViewer';
+import { buildTraceMessagesExport, downloadJsonFile, traceExportToJson } from '@/lib/exportTraceMessages';
 
 function StatusBadge({ status }: { status: number }) {
   const color = status < 300 ? 'bg-green-600' : status < 400 ? 'bg-yellow-600' : 'bg-red-600';
@@ -71,6 +72,18 @@ export default function TraceDetail({ traceId }: { traceId: string }) {
         <div className="flex items-center gap-2 mb-3">
           <span className="text-xs font-bold text-gray-300">{trace.request_method}</span>
           <span className="text-gray-400 text-xs flex-1 truncate">{trace.request_path}</span>
+          <button
+            type="button"
+            onClick={() => {
+              const payload = buildTraceMessagesExport(trace);
+              const text = traceExportToJson(payload, true);
+              downloadJsonFile(`trace-${trace.id}-messages.json`, text);
+            }}
+            className="shrink-0 text-xs px-2.5 py-1 rounded border border-gray-600 text-gray-300 hover:bg-gray-800 hover:border-gray-500 transition-colors"
+            title="导出为 OpenAI Chat 兼容的 messages + metadata JSON"
+          >
+            导出 messages
+          </button>
           <StatusBadge status={trace.response_status} />
         </div>
         <div className="grid grid-cols-2 gap-x-6 gap-y-1">
