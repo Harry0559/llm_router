@@ -1,6 +1,9 @@
-import { AGENTS, API_SERVER_PORT } from './config';
+import { AGENTS, API_SERVER_PORT, UPSTREAM_URL } from './config';
 import { createProxyApp } from './proxyHandler';
 import { createApiApp } from './apiServer';
+
+console.log(`[Config] Forwarding to: ${UPSTREAM_URL}`);
+console.log('');
 
 // Start one proxy server per agent
 for (const agent of AGENTS) {

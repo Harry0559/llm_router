@@ -1,7 +1,14 @@
-export const VOLCANO_API_KEY = '8f08b952-67b2-44a7-8b2e-f28de40afc56';
-export const VOLCANO_ANTHROPIC_BASE = 'https://ark.cn-beijing.volces.com/api/coding';
-export const VOLCANO_OPENAI_BASE = 'https://ark.cn-beijing.volces.com/api/coding/v3';
-export const DEFAULT_MODEL = 'glm-4.7';
+const upstreamUrl = process.env.LLM_UPSTREAM_URL;
+
+if (!upstreamUrl) {
+  console.error('ERROR: LLM_UPSTREAM_URL is not set.');
+  console.error('Please set it before starting the proxy, e.g.:');
+  console.error('  set LLM_UPSTREAM_URL=https://api.anthropic.com');
+  process.exit(1);
+}
+
+export const UPSTREAM_URL: string = upstreamUrl;
+
 export const API_SERVER_PORT = 3001;
 
 export interface AgentConfig {

@@ -1,10 +1,7 @@
 import express, { type Request, type Response } from 'express';
 import axios, { type AxiosResponse } from 'axios';
 import cors from 'cors';
-import {
-  VOLCANO_API_KEY, VOLCANO_ANTHROPIC_BASE, VOLCANO_OPENAI_BASE, DEFAULT_MODEL,
-  type AgentConfig,
-} from './config';
+import { UPSTREAM_URL, type AgentConfig } from './config';
 import { getOrCreateSessionId, insertTrace } from './db';
 import { broadcast } from './broadcast';
 import {
@@ -12,28 +9,25 @@ import {
   assembleOpenAIStream, getOpenAITokens,
 } from './streamAssembler';
 
-// Strip auth headers coming from the agent client
+// Strip HTTP hop-by-hop headers that must not be forwarded
 const STRIP_HEADERS = new Set([
   'host', 'content-length', 'connection',
-  'authorization', 'x-api-key',
 ]);
 
-function buildRequestHeaders(
-  req: Request,
-  protocol: 'anthropic' | 'openai'
-): Record<string, string> {
+function buildUpstreamUrl(protocol: 'anthropic' | 'openai'): string {
+  const base = UPSTREAM_URL.replace(/\/$/, '');
+  return protocol === 'anthropic'
+    ? `${base}/v1/messages`
+    : `${base}/v1/chat/completions`;
+}
+
+function buildRequestHeaders(req: Request): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-
-  if (protocol === 'anthropic') {
-    headers['x-api-key'] = VOLCANO_API_KEY;
-    headers['anthropic-version'] = (req.headers['anthropic-version'] as string) ?? '2023-06-01';
-    if (req.headers['anthropic-beta']) {
-      headers['anthropic-beta'] = req.headers['anthropic-beta'] as string;
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (!STRIP_HEADERS.has(key) && typeof value === 'string') {
+      headers[key] = value;
     }
-  } else {
-    headers['Authorization'] = `Bearer ${VOLCANO_API_KEY}`;
   }
-
   return headers;
 }
 
@@ -41,13 +35,10 @@ async function handleProxy(req: Request, res: Response, cfg: AgentConfig): Promi
   const startTime = Date.now();
   const sessionId = getOrCreateSessionId(cfg.name);
 
-  const requestBody: Record<string, unknown> = { ...(req.body as Record<string, unknown>), model: DEFAULT_MODEL };
+  const requestBody = req.body as Record<string, unknown>;
   const isStreaming = requestBody.stream === true;
-  const upstreamHeaders = buildRequestHeaders(req, cfg.protocol);
-
-  const upstreamUrl = cfg.protocol === 'anthropic'
-    ? `${VOLCANO_ANTHROPIC_BASE}/v1/messages`
-    : `${VOLCANO_OPENAI_BASE}/chat/completions`;
+  const upstreamHeaders = buildRequestHeaders(req);
+  const upstreamUrl = buildUpstreamUrl(cfg.protocol);
 
   const sanitizedReqHeaders = Object.fromEntries(
     Object.entries(req.headers).filter(([k]) => !STRIP_HEADERS.has(k))
@@ -72,6 +63,7 @@ async function handleProxy(req: Request, res: Response, cfg: AgentConfig): Promi
     if (!res.headersSent) res.status(status).json(body);
 
     const duration = Date.now() - startTime;
+    const model = (requestBody.model as string) || '';
     const traceId = insertTrace({
       session_id: sessionId, agent: cfg.name, port: cfg.port, protocol: cfg.protocol,
       timestamp: startTime, request_method: req.method, request_path: req.path,
@@ -80,7 +72,7 @@ async function handleProxy(req: Request, res: Response, cfg: AgentConfig): Promi
       response_status: status,
       response_headers: JSON.stringify(axiosErr.response?.headers ?? {}),
       response_body: JSON.stringify(body),
-      duration_ms: duration, model: DEFAULT_MODEL, tokens_input: 0, tokens_output: 0,
+      duration_ms: duration, model, tokens_input: 0, tokens_output: 0,
     });
     broadcast('new_trace', { id: traceId, session_id: sessionId, agent: cfg.name, timestamp: startTime, response_status: status, duration_ms: duration });
     return;
@@ -91,7 +83,6 @@ async function handleProxy(req: Request, res: Response, cfg: AgentConfig): Promi
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('Transfer-Encoding', 'chunked');
-    // Forward any CORS headers from upstream if needed
     res.status(upstreamResp.status);
 
     const chunks: Buffer[] = [];
@@ -120,7 +111,7 @@ async function handleProxy(req: Request, res: Response, cfg: AgentConfig): Promi
       const tokens = cfg.protocol === 'anthropic'
         ? getAnthropicTokens(assembled)
         : getOpenAITokens(assembled);
-      const model = (assembled.model as string) || DEFAULT_MODEL;
+      const model = (assembled.model as string) || (requestBody.model as string) || '';
       const duration = Date.now() - startTime;
 
       const traceId = insertTrace({
@@ -152,18 +143,19 @@ async function handleProxy(req: Request, res: Response, cfg: AgentConfig): Promi
     res.status(upstreamResp.status).json(responseBody);
 
     const duration = Date.now() - startTime;
-    let tokensIn = 0, tokensOut = 0, model = DEFAULT_MODEL;
+    let tokensIn = 0, tokensOut = 0;
+    let model = (requestBody.model as string) || '';
 
     if (cfg.protocol === 'anthropic') {
       const usage = (responseBody.usage ?? {}) as Record<string, number>;
       tokensIn = usage.input_tokens ?? 0;
       tokensOut = usage.output_tokens ?? 0;
-      model = (responseBody.model as string) || DEFAULT_MODEL;
+      model = (responseBody.model as string) || model;
     } else {
       const usage = (responseBody.usage ?? {}) as Record<string, number>;
       tokensIn = usage.prompt_tokens ?? 0;
       tokensOut = usage.completion_tokens ?? 0;
-      model = (responseBody.model as string) || DEFAULT_MODEL;
+      model = (responseBody.model as string) || model;
     }
 
     const traceId = insertTrace({
@@ -191,12 +183,9 @@ export function createProxyApp(cfg: AgentConfig): express.Application {
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-  // Return a fake model list so agents don't fail on /v1/models
+  // Return a model list based on upstream URL
   app.get('/v1/models', (_req, res) => {
-    res.json({
-      object: 'list',
-      data: [{ id: DEFAULT_MODEL, object: 'model', created: 1700000000, owned_by: 'volcano' }],
-    });
+    res.json({ object: 'list', data: [] });
   });
 
   // Main proxy routes
@@ -208,8 +197,8 @@ export function createProxyApp(cfg: AgentConfig): express.Application {
 
   // Transparent fallback for any other routes
   app.all('*', async (req, res) => {
-    const base = cfg.protocol === 'anthropic' ? VOLCANO_ANTHROPIC_BASE : VOLCANO_OPENAI_BASE;
-    const headers = buildRequestHeaders(req, cfg.protocol);
+    const base = UPSTREAM_URL.replace(/\/$/, '');
+    const headers = buildRequestHeaders(req);
     try {
       const resp = await axios({ method: req.method as string, url: `${base}${req.path}`, headers, data: req.body, timeout: 30_000 });
       res.status(resp.status).json(resp.data);
