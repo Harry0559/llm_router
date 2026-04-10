@@ -6,7 +6,7 @@
 
 ```
 Claude Code  → localhost:7878  (Anthropic 协议) ─┐
-Free Code    → localhost:7879  (Anthropic 协议) ─┼→ Volcano API (glm-4.7)
+Free Code    → localhost:7879  (Anthropic 协议) ─┼→ 上游 LLM API (由 LLM_UPSTREAM_URL 指定)
 Test Code    → localhost:7880  (OpenAI 协议)    ─┘
 
 Web UI       → localhost:3000  (Next.js)
@@ -17,7 +17,7 @@ Proxy API    → localhost:3001  (REST + SSE)
 
 ```bash
 # 1. 安装所有依赖
-npm run install:all
+npm install && npm run install:all
 
 # 2. 同时启动代理服务器和 Web UI
 npm run dev
@@ -29,19 +29,37 @@ npm run dev:proxy   # 代理服务器 (端口 7878/7879/7880/3001)
 npm run dev:web     # Web UI (端口 3000)
 ```
 
-## Code Agent 配置
+## 配置说明
 
-### Claude Code
+### 启动 llm_router 前
+
+llm_router 需要知道将流量转发到哪个上游 API，通过环境变量指定：
+
 ```bash
-# 设置 API Base URL 指向本代理
-claude config set apiBaseUrl http://localhost:7878
+set LLM_UPSTREAM_URL=<上游 API 的 base URL，例如 https://api.anthropic.com>
 ```
 
-### Trae / Free Code
-在设置中配置 API Base URL 为 `http://localhost:7879`（Anthropic 协议）
+未设置此变量时，代理服务器将拒绝启动。
 
-### Test Code (OpenAI 协议)
-配置 API Base URL 为 `http://localhost:7880`，协议选 OpenAI
+### 启动 Code Agent 前
+
+将 Code Agent 的 API 请求目标指向 llm_router，同时配置你自己的 API Key：
+
+```bash
+# 以 Claude Code 为例（Anthropic 协议，对应代理端口 7878）
+set ANTHROPIC_BASE_URL=http://localhost:7878
+set ANTHROPIC_AUTH_TOKEN=<你的 API Key>
+```
+
+Code Agent 的其他配置（模型选择等）保持不变，llm_router 会原样透传所有请求字段。
+
+### 各 Agent 对应端口
+
+| Agent | 端口 | 协议 |
+|---|---|---|
+| Claude Code | 7878 | Anthropic |
+| Free Code / Trae | 7879 | Anthropic |
+| Test Code | 7880 | OpenAI |
 
 ## Web UI 功能
 
