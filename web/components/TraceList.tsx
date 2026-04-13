@@ -2,13 +2,13 @@
 
 import { useEffect, useState, useRef } from 'react';
 import type { TraceSummary } from '@/lib/types';
-import { fetchTraces } from '@/lib/api';
+import { fetchRunTraces } from '@/lib/api';
 
 interface Props {
-  sessionId: string;
+  runId: string;
   selectedId: string | null;
   onSelect: (id: string) => void;
-  refreshTick: number; // bump to trigger reload
+  refreshTick: number;
 }
 
 function StatusDot({ status }: { status: number }) {
@@ -20,22 +20,19 @@ function timeStr(ts: number): string {
   return new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-export default function TraceList({ sessionId, selectedId, onSelect, refreshTick }: Props) {
+export default function TraceList({ runId, selectedId, onSelect, refreshTick }: Props) {
   const [traces, setTraces] = useState<TraceSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setLoading(true);
-    fetchTraces(sessionId)
-      .then(data => {
-        setTraces(data);
-      })
+    fetchRunTraces(runId)
+      .then(setTraces)
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [sessionId, refreshTick]);
+  }, [runId, refreshTick]);
 
-  // Auto-scroll to bottom on new traces
   useEffect(() => {
     if (listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight;
@@ -47,14 +44,14 @@ export default function TraceList({ sessionId, selectedId, onSelect, refreshTick
       {/* Header */}
       <div className="px-3 py-2 border-b border-gray-800 shrink-0">
         <p className="text-xs text-gray-400">
-          {loading ? 'Loading…' : `${traces.length} trace${traces.length !== 1 ? 's' : ''}`}
+          {loading ? '加载中…' : `${traces.length} trace${traces.length !== 1 ? 's' : ''}`}
         </p>
       </div>
 
       {/* List */}
       <div ref={listRef} className="flex-1 overflow-y-auto">
         {!loading && traces.length === 0 && (
-          <p className="text-gray-600 text-xs text-center py-8">No traces yet</p>
+          <p className="text-gray-600 text-xs text-center py-8">暂无 trace</p>
         )}
 
         {traces.map((trace, idx) => (
@@ -67,14 +64,12 @@ export default function TraceList({ sessionId, selectedId, onSelect, refreshTick
                 : 'hover:bg-gray-800/40 border-l-2 border-l-transparent'
             }`}
           >
-            {/* Row 1 */}
             <div className="flex items-center gap-1.5 mb-1">
               <StatusDot status={trace.response_status} />
               <span className="text-xs text-gray-400 font-semibold">{trace.request_method}</span>
               <span className="text-xs text-gray-500 truncate flex-1">{trace.request_path}</span>
               <span className="text-xs text-gray-500 shrink-0">#{idx + 1}</span>
             </div>
-            {/* Row 2 */}
             <div className="flex items-center gap-2 text-xs text-gray-600">
               <span>{timeStr(trace.timestamp)}</span>
               <span>{trace.duration_ms}ms</span>
@@ -87,7 +82,6 @@ export default function TraceList({ sessionId, selectedId, onSelect, refreshTick
                 </span>
               )}
             </div>
-            {/* Row 3: model */}
             {trace.model && (
               <div className="text-xs text-gray-700 mt-0.5 truncate">{trace.model}</div>
             )}

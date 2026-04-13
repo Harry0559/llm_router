@@ -2,7 +2,7 @@ import express, { type Request, type Response } from 'express';
 import axios, { type AxiosResponse } from 'axios';
 import cors from 'cors';
 import { UPSTREAM_URL, PROXY_PORT } from './config';
-import { getOrCreateSessionId, insertTrace } from './db';
+import { resolveSession, resolveRun, insertTrace } from './db';
 import { broadcast } from './broadcast';
 import {
   assembleAnthropicStream, getAnthropicTokens,
@@ -14,6 +14,50 @@ const STRIP_HEADERS = new Set([
   'host', 'content-length', 'connection',
 ]);
 
+// ────────── session / run signal extraction ──────────
+
+/**
+ * Read metadata.user_id (JSON string) → parse → return session_id field.
+ * Falls back to "__unknown__" if the field is absent or malformed.
+ */
+function extractExternalSessionId(body: Record<string, unknown>): string {
+  try {
+    const metadata = (body.metadata ?? {}) as Record<string, unknown>;
+    const raw = metadata.user_id as string | undefined;
+    if (!raw) return '__unknown__';
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const sid = parsed.session_id as string | undefined;
+    return sid || '__unknown__';
+  } catch {
+    return '__unknown__';
+  }
+}
+
+/**
+ * A trace starts a NEW run when the last element of messages:
+ *   - has role === "user", AND
+ *   - every item in content has type === "text"
+ *
+ * Any other pattern (tool_result, non-user role, etc.) means the trace
+ * is a continuation of the current run.
+ */
+function detectNewRun(body: Record<string, unknown>): boolean {
+  const messages = body.messages as unknown[] | undefined;
+  if (!messages || messages.length === 0) return true;
+
+  const last = messages[messages.length - 1] as Record<string, unknown>;
+  if (last.role !== 'user') return false;
+
+  const content = last.content;
+  // Plain string content counts as text
+  if (typeof content === 'string') return true;
+  if (!Array.isArray(content) || content.length === 0) return false;
+
+  return (content as Record<string, unknown>[]).every(item => item.type === 'text');
+}
+
+// ────────── request helpers ──────────
+
 function buildRequestHeaders(req: Request): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   for (const [key, value] of Object.entries(req.headers)) {
@@ -24,14 +68,20 @@ function buildRequestHeaders(req: Request): Record<string, string> {
   return headers;
 }
 
+// ────────── core proxy handler ──────────
+
 async function handleProxy(req: Request, res: Response, protocol: 'anthropic' | 'openai'): Promise<void> {
   const startTime = Date.now();
-  const sessionId = getOrCreateSessionId(protocol);
 
   const requestBody = req.body as Record<string, unknown>;
-  const isStreaming = requestBody.stream === true;
+  const externalId = extractExternalSessionId(requestBody);
+  const sessionId  = resolveSession(externalId);
+  const isNew      = detectNewRun(requestBody);
+  const runId      = resolveRun(sessionId, isNew);
+
+  const isStreaming    = requestBody.stream === true;
   const upstreamHeaders = buildRequestHeaders(req);
-  const upstreamUrl = `${UPSTREAM_URL.replace(/\/$/, '')}${req.path}`;
+  const upstreamUrl    = `${UPSTREAM_URL.replace(/\/$/, '')}${req.path}`;
 
   const sanitizedReqHeaders = Object.fromEntries(
     Object.entries(req.headers).filter(([k]) => !STRIP_HEADERS.has(k))
@@ -51,14 +101,14 @@ async function handleProxy(req: Request, res: Response, protocol: 'anthropic' | 
   } catch (err: unknown) {
     const axiosErr = err as { response?: { status: number; data: unknown; headers: unknown }; message: string };
     const status = axiosErr.response?.status ?? 502;
-    const body = axiosErr.response?.data ?? { error: axiosErr.message };
+    const body   = axiosErr.response?.data ?? { error: axiosErr.message };
 
     if (!res.headersSent) res.status(status).json(body);
 
     const duration = Date.now() - startTime;
-    const model = (requestBody.model as string) || '';
-    const traceId = insertTrace({
-      session_id: sessionId, agent: protocol, port: PROXY_PORT, protocol,
+    const model    = (requestBody.model as string) || '';
+    const traceId  = insertTrace({
+      session_id: sessionId, run_id: runId, agent: protocol, port: PROXY_PORT, protocol,
       timestamp: startTime, request_method: req.method, request_path: req.path,
       request_headers: JSON.stringify(sanitizedReqHeaders),
       request_body: JSON.stringify(requestBody),
@@ -67,7 +117,7 @@ async function handleProxy(req: Request, res: Response, protocol: 'anthropic' | 
       response_body: JSON.stringify(body),
       duration_ms: duration, model, tokens_input: 0, tokens_output: 0,
     });
-    broadcast('new_trace', { id: traceId, session_id: sessionId, agent: protocol, timestamp: startTime, response_status: status, duration_ms: duration });
+    broadcast('new_trace', { id: traceId, session_id: sessionId, run_id: runId, agent: protocol, timestamp: startTime, response_status: status, duration_ms: duration });
     return;
   }
 
@@ -104,11 +154,11 @@ async function handleProxy(req: Request, res: Response, protocol: 'anthropic' | 
       const tokens = protocol === 'anthropic'
         ? getAnthropicTokens(assembled)
         : getOpenAITokens(assembled);
-      const model = (assembled.model as string) || (requestBody.model as string) || '';
+      const model    = (assembled.model as string) || (requestBody.model as string) || '';
       const duration = Date.now() - startTime;
 
       const traceId = insertTrace({
-        session_id: sessionId, agent: protocol, port: PROXY_PORT, protocol,
+        session_id: sessionId, run_id: runId, agent: protocol, port: PROXY_PORT, protocol,
         timestamp: startTime, request_method: req.method, request_path: req.path,
         request_headers: JSON.stringify(sanitizedReqHeaders),
         request_body: JSON.stringify(requestBody),
@@ -120,7 +170,7 @@ async function handleProxy(req: Request, res: Response, protocol: 'anthropic' | 
       });
 
       broadcast('new_trace', {
-        id: traceId, session_id: sessionId, agent: protocol,
+        id: traceId, session_id: sessionId, run_id: runId, agent: protocol,
         timestamp: startTime, response_status: upstreamResp.status,
         duration_ms: duration, model, tokens_input: tokens.input, tokens_output: tokens.output,
       });
@@ -152,7 +202,7 @@ async function handleProxy(req: Request, res: Response, protocol: 'anthropic' | 
     }
 
     const traceId = insertTrace({
-      session_id: sessionId, agent: protocol, port: PROXY_PORT, protocol,
+      session_id: sessionId, run_id: runId, agent: protocol, port: PROXY_PORT, protocol,
       timestamp: startTime, request_method: req.method, request_path: req.path,
       request_headers: JSON.stringify(sanitizedReqHeaders),
       request_body: JSON.stringify(requestBody),
@@ -163,7 +213,7 @@ async function handleProxy(req: Request, res: Response, protocol: 'anthropic' | 
     });
 
     broadcast('new_trace', {
-      id: traceId, session_id: sessionId, agent: protocol,
+      id: traceId, session_id: sessionId, run_id: runId, agent: protocol,
       timestamp: startTime, response_status: upstreamResp.status,
       duration_ms: duration, model, tokens_input: tokensIn, tokens_output: tokensOut,
     });
@@ -180,7 +230,7 @@ export function createProxyApp(): express.Application {
     res.json({ object: 'list', data: [] });
   });
 
-  app.post('/v1/messages', (req, res) => { void handleProxy(req, res, 'anthropic'); });
+  app.post('/v1/messages',         (req, res) => { void handleProxy(req, res, 'anthropic'); });
   app.post('/v1/chat/completions', (req, res) => { void handleProxy(req, res, 'openai'); });
 
   // Transparent fallback for any other routes

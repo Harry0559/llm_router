@@ -6,6 +6,8 @@
 Code Agent  →  localhost:7878  →  LLM API（你的 Key、你的模型）
                     ↓
              localhost:3000  （实时 Web 面板）
+
+面板层级：Session（对话窗口）→ Run（一次交互）→ Trace（单次 LLM 调用）
 ```
 
 ## 前置条件
@@ -88,15 +90,21 @@ claude
 
 ## Web 面板功能
 
-通过 SSE 实时推送，无需轮询或刷新页面。
+通过 SSE 实时推送，无需轮询或刷新页面。四列布局，每列均可点击 `‹` / `›` 按钮独立折叠展开。
 
 | 列 | 内容 |
 |---|---|
-| **会话列表** | 按协议分组，颜色标注，支持删除/清空 |
-| **Trace 列表** | 该会话内每条请求，含状态码、耗时、Token 数 |
-| **详情** | Messages · Response · JSON · Headers · Tokens 标签页 |
+| **Sessions** | 每个 agent 对话窗口对应一个 Session，以 session_id 前 8 位命名，支持删除/清空 |
+| **Runs** | 同一 Session 内每次用户发起的新对话为一个 Run，显示包含的 trace 数量 |
+| **Traces** | 该 Run 内的每次 LLM 调用，含状态码、耗时、Token 数 |
+| **详情** | Messages · Response · Raw Request · Raw Response · Headers 标签页 |
 
 **Messages** 标签完整渲染对话内容，包括 system prompt、tool call、tool result。**Response** 标签渲染助手回复，tool call 可视化展示。
+
+### Session 与 Run 的识别规则
+
+- **Session**：从请求的 `metadata.user_id` 字段中提取 `session_id`，相同值归为同一 Session。不同对话窗口或不同 agent 实例会产生不同 Session。
+- **Run**：当 `messages` 数组末尾元素的 `role` 为 `user` 且 `content` 全部为 `text` 类型时，判定为新 Run 的开始；包含 `tool_result` 则归入当前 Run 继续。
 
 ## 端口说明
 

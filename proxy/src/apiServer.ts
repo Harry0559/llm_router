@@ -3,9 +3,12 @@ import cors from 'cors';
 import { addSseClient } from './broadcast';
 import {
   querySessions,
+  queryRunsBySession,
+  queryTracesByRun,
   queryTracesBySession,
   queryTraceById,
   deleteSession,
+  deleteRun,
   clearAll,
 } from './db';
 
@@ -21,7 +24,6 @@ export function createApiApp(): express.Application {
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
 
-    // Keep-alive ping every 25s
     const ping = setInterval(() => {
       try { res.write(':ping\n\n'); } catch { clearInterval(ping); }
     }, 25_000);
@@ -40,7 +42,22 @@ export function createApiApp(): express.Application {
     res.json({ ok: true });
   });
 
+  // ── Runs ───────────────────────────────────────────────────────────────
+  app.get('/api/sessions/:id/runs', (req, res) => {
+    res.json(queryRunsBySession(req.params.id));
+  });
+
+  app.delete('/api/runs/:id', (req, res) => {
+    deleteRun(req.params.id);
+    res.json({ ok: true });
+  });
+
   // ── Traces ─────────────────────────────────────────────────────────────
+  app.get('/api/runs/:id/traces', (req, res) => {
+    res.json(queryTracesByRun(req.params.id));
+  });
+
+  // kept for compatibility
   app.get('/api/sessions/:id/traces', (req, res) => {
     res.json(queryTracesBySession(req.params.id));
   });
