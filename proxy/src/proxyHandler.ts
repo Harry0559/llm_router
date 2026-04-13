@@ -1,7 +1,7 @@
 import express, { type Request, type Response } from 'express';
 import axios, { type AxiosResponse } from 'axios';
 import cors from 'cors';
-import { UPSTREAM_URL, type AgentConfig } from './config';
+import { UPSTREAM_URL, PROXY_PORT } from './config';
 import { getOrCreateSessionId, insertTrace } from './db';
 import { broadcast } from './broadcast';
 import {
@@ -14,13 +14,6 @@ const STRIP_HEADERS = new Set([
   'host', 'content-length', 'connection',
 ]);
 
-function buildUpstreamUrl(protocol: 'anthropic' | 'openai'): string {
-  const base = UPSTREAM_URL.replace(/\/$/, '');
-  return protocol === 'anthropic'
-    ? `${base}/v1/messages`
-    : `${base}/v1/chat/completions`;
-}
-
 function buildRequestHeaders(req: Request): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   for (const [key, value] of Object.entries(req.headers)) {
@@ -31,14 +24,14 @@ function buildRequestHeaders(req: Request): Record<string, string> {
   return headers;
 }
 
-async function handleProxy(req: Request, res: Response, cfg: AgentConfig): Promise<void> {
+async function handleProxy(req: Request, res: Response, protocol: 'anthropic' | 'openai'): Promise<void> {
   const startTime = Date.now();
-  const sessionId = getOrCreateSessionId(cfg.name);
+  const sessionId = getOrCreateSessionId(protocol);
 
   const requestBody = req.body as Record<string, unknown>;
   const isStreaming = requestBody.stream === true;
   const upstreamHeaders = buildRequestHeaders(req);
-  const upstreamUrl = buildUpstreamUrl(cfg.protocol);
+  const upstreamUrl = `${UPSTREAM_URL.replace(/\/$/, '')}${req.path}`;
 
   const sanitizedReqHeaders = Object.fromEntries(
     Object.entries(req.headers).filter(([k]) => !STRIP_HEADERS.has(k))
@@ -65,7 +58,7 @@ async function handleProxy(req: Request, res: Response, cfg: AgentConfig): Promi
     const duration = Date.now() - startTime;
     const model = (requestBody.model as string) || '';
     const traceId = insertTrace({
-      session_id: sessionId, agent: cfg.name, port: cfg.port, protocol: cfg.protocol,
+      session_id: sessionId, agent: protocol, port: PROXY_PORT, protocol,
       timestamp: startTime, request_method: req.method, request_path: req.path,
       request_headers: JSON.stringify(sanitizedReqHeaders),
       request_body: JSON.stringify(requestBody),
@@ -74,7 +67,7 @@ async function handleProxy(req: Request, res: Response, cfg: AgentConfig): Promi
       response_body: JSON.stringify(body),
       duration_ms: duration, model, tokens_input: 0, tokens_output: 0,
     });
-    broadcast('new_trace', { id: traceId, session_id: sessionId, agent: cfg.name, timestamp: startTime, response_status: status, duration_ms: duration });
+    broadcast('new_trace', { id: traceId, session_id: sessionId, agent: protocol, timestamp: startTime, response_status: status, duration_ms: duration });
     return;
   }
 
@@ -105,17 +98,17 @@ async function handleProxy(req: Request, res: Response, cfg: AgentConfig): Promi
       }
 
       const fullText = Buffer.concat(chunks).toString('utf8');
-      const assembled = cfg.protocol === 'anthropic'
+      const assembled = protocol === 'anthropic'
         ? assembleAnthropicStream(fullText)
         : assembleOpenAIStream(fullText);
-      const tokens = cfg.protocol === 'anthropic'
+      const tokens = protocol === 'anthropic'
         ? getAnthropicTokens(assembled)
         : getOpenAITokens(assembled);
       const model = (assembled.model as string) || (requestBody.model as string) || '';
       const duration = Date.now() - startTime;
 
       const traceId = insertTrace({
-        session_id: sessionId, agent: cfg.name, port: cfg.port, protocol: cfg.protocol,
+        session_id: sessionId, agent: protocol, port: PROXY_PORT, protocol,
         timestamp: startTime, request_method: req.method, request_path: req.path,
         request_headers: JSON.stringify(sanitizedReqHeaders),
         request_body: JSON.stringify(requestBody),
@@ -127,14 +120,14 @@ async function handleProxy(req: Request, res: Response, cfg: AgentConfig): Promi
       });
 
       broadcast('new_trace', {
-        id: traceId, session_id: sessionId, agent: cfg.name,
+        id: traceId, session_id: sessionId, agent: protocol,
         timestamp: startTime, response_status: upstreamResp.status,
         duration_ms: duration, model, tokens_input: tokens.input, tokens_output: tokens.output,
       });
     });
 
     stream.on('error', (err: Error) => {
-      console.error(`[${cfg.name}] stream error:`, err.message);
+      console.error(`[${protocol}] stream error:`, err.message);
       if (clientAlive) { try { res.end(); } catch { /* ignore */ } }
     });
 
@@ -146,7 +139,7 @@ async function handleProxy(req: Request, res: Response, cfg: AgentConfig): Promi
     let tokensIn = 0, tokensOut = 0;
     let model = (requestBody.model as string) || '';
 
-    if (cfg.protocol === 'anthropic') {
+    if (protocol === 'anthropic') {
       const usage = (responseBody.usage ?? {}) as Record<string, number>;
       tokensIn = usage.input_tokens ?? 0;
       tokensOut = usage.output_tokens ?? 0;
@@ -159,7 +152,7 @@ async function handleProxy(req: Request, res: Response, cfg: AgentConfig): Promi
     }
 
     const traceId = insertTrace({
-      session_id: sessionId, agent: cfg.name, port: cfg.port, protocol: cfg.protocol,
+      session_id: sessionId, agent: protocol, port: PROXY_PORT, protocol,
       timestamp: startTime, request_method: req.method, request_path: req.path,
       request_headers: JSON.stringify(sanitizedReqHeaders),
       request_body: JSON.stringify(requestBody),
@@ -170,30 +163,25 @@ async function handleProxy(req: Request, res: Response, cfg: AgentConfig): Promi
     });
 
     broadcast('new_trace', {
-      id: traceId, session_id: sessionId, agent: cfg.name,
+      id: traceId, session_id: sessionId, agent: protocol,
       timestamp: startTime, response_status: upstreamResp.status,
       duration_ms: duration, model, tokens_input: tokensIn, tokens_output: tokensOut,
     });
   }
 }
 
-export function createProxyApp(cfg: AgentConfig): express.Application {
+export function createProxyApp(): express.Application {
   const app = express();
   app.use(cors());
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-  // Return a model list based on upstream URL
   app.get('/v1/models', (_req, res) => {
     res.json({ object: 'list', data: [] });
   });
 
-  // Main proxy routes
-  if (cfg.protocol === 'anthropic') {
-    app.post('/v1/messages', (req, res) => { void handleProxy(req, res, cfg); });
-  } else {
-    app.post('/v1/chat/completions', (req, res) => { void handleProxy(req, res, cfg); });
-  }
+  app.post('/v1/messages', (req, res) => { void handleProxy(req, res, 'anthropic'); });
+  app.post('/v1/chat/completions', (req, res) => { void handleProxy(req, res, 'openai'); });
 
   // Transparent fallback for any other routes
   app.all('*', async (req, res) => {

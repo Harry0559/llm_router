@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Development
 ```bash
-npm run install:all   # Install all dependencies (proxy + web)
+npm install && npm run install:all   # Install all dependencies (root + proxy + web)
 npm run dev           # Start proxy server and web UI concurrently
-npm run dev:proxy     # Start proxy server only (ports 7878/7879/7880 + API :3001)
+npm run dev:proxy     # Start proxy server only (proxy :7878 + API :3001)
 npm run dev:web       # Start web UI only (port 3000)
 ```
 
@@ -34,35 +34,40 @@ No linting or test suite is currently configured.
 
 This is a monorepo with two packages: `proxy/` (Node/TypeScript backend) and `web/` (Next.js frontend).
 
+### Environment
+
+`LLM_UPSTREAM_URL` must be set before starting the proxy (e.g. `export LLM_UPSTREAM_URL=https://api.anthropic.com`). The proxy will exit immediately if this is missing.
+
 ### Request flow
 
 ```
-Code Agents (Claude Code :7878, Free Code :7879, Test Code :7880)
-  → proxyHandler.ts   (intercepts, strips auth, overrides model, forwards)
-  → Volcano API       (glm-4.7, Anthropic + OpenAI protocol endpoints)
-  → streamAssembler.ts (reassembles SSE chunks into complete JSON)
-  → db.ts             (persists trace + updates session in SQLite)
-  → broadcast.ts      (SSE push to connected web clients)
-  → web UI            (three-column dashboard: sessions / traces / detail)
+Code Agents → proxy :7878 → proxyHandler.ts (strips hop-by-hop headers, forwards)
+                          → LLM_UPSTREAM_URL (any Anthropic/OpenAI-compatible endpoint)
+                          → streamAssembler.ts (reassembles SSE into complete JSON)
+                          → db.ts (persists trace + session in SQLite)
+                          → broadcast.ts (SSE push to browser)
+                          → web UI :3000 (sessions / traces / detail)
 ```
+
+The proxy is **transparent** — forwards verbatim (minus hop-by-hop headers), no model rewriting, no credential injection.
+
+**Protocol detection** is by request path: `/v1/messages` → Anthropic, `/v1/chat/completions` → OpenAI. All other paths are forwarded transparently without tracing.
 
 ### Proxy (`proxy/src/`)
 
 | File | Role |
 |---|---|
-| `index.ts` | Entry point; starts proxy and API servers |
-| `config.ts` | All constants: agent ports, Volcano API endpoints/key, default model |
-| `proxyHandler.ts` | Core routing; handles Anthropic and OpenAI protocols; streams responses back to agents |
-| `apiServer.ts` | REST + SSE API consumed by the web UI (`/api/sessions`, `/api/traces`, `/api/events`) |
-| `db.ts` | SQLite schema init, session tracking (10-min inactivity timeout), trace persistence |
-| `streamAssembler.ts` | Reconstructs both Anthropic and OpenAI server-sent event streams into structured JSON |
+| `index.ts` | Entry point; starts proxy (:7878) and API (:3001) servers |
+| `config.ts` | Reads `LLM_UPSTREAM_URL`; defines `PROXY_PORT` and `API_SERVER_PORT` |
+| `proxyHandler.ts` | Single Express app; routes by path to Anthropic or OpenAI handler; transparent fallback for all other routes |
+| `apiServer.ts` | REST + SSE API for web UI (`/api/sessions`, `/api/sessions/:id/traces`, `/api/traces/:id`, `/api/events`, `DELETE /api/data/all`) |
+| `db.ts` | SQLite schema, session tracking (10-min inactivity timeout, in-memory state resets on restart), trace persistence |
+| `streamAssembler.ts` | Reconstructs Anthropic and OpenAI SSE streams into structured JSON |
 | `broadcast.ts` | Maintains SSE connections; emits `new_trace` events |
 
 Database is a SQLite file at `proxy/data/traces.db` (gitignored, auto-created on startup).
 
-**Session grouping**: requests from the same agent within 10 minutes of the previous request are grouped into the same session.
-
-**Model override**: all upstream requests have their model replaced with `glm-4.7` regardless of what the agent sends.
+**Session grouping**: sessions are grouped by protocol (`anthropic` / `openai`); requests within 10 minutes of the previous one share a session.
 
 ### Web UI (`web/`)
 

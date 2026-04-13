@@ -31,7 +31,7 @@ function groupByAgent(sessions: Session[]): Record<string, Session[]> {
   return groups;
 }
 
-const AGENT_ORDER = ['claude_code', 'free_code', 'test_code'];
+const AGENT_ORDER = ['anthropic', 'openai'];
 
 export default function SessionSidebar({
   sessions,

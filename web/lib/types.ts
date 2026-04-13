@@ -30,19 +30,16 @@ export interface TraceDetail extends TraceSummary {
 }
 
 export const AGENT_LABELS: Record<string, string> = {
-  claude_code: 'Claude Code',
-  free_code: 'Free Code',
-  test_code: 'Test Code',
+  anthropic: 'Anthropic',
+  openai:    'OpenAI',
 };
 
 export const AGENT_COLORS: Record<string, string> = {
-  claude_code: 'text-orange-400',
-  free_code:   'text-blue-400',
-  test_code:   'text-green-400',
+  anthropic: 'text-orange-400',
+  openai:    'text-blue-400',
 };
 
 export const AGENT_BG: Record<string, string> = {
-  claude_code: 'bg-orange-500/10 border-orange-500/30',
-  free_code:   'bg-blue-500/10 border-blue-500/30',
-  test_code:   'bg-green-500/10 border-green-500/30',
+  anthropic: 'bg-orange-500/10 border-orange-500/30',
+  openai:    'bg-blue-500/10 border-blue-500/30',
 };
