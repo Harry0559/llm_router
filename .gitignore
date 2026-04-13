@@ -20,3 +20,4 @@ proxy/data/*.db-wal
 
 .DS_Store
 Thumbs.db
+CLAUDE.md
