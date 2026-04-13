@@ -18,6 +18,7 @@ export interface TraceSummary {
   id: string;
   session_id: string;
   run_id: string;
+  agent_type: 'main_agent' | 'subagent' | 'title_gen';
   agent: string;
   port: number;
   protocol: string;

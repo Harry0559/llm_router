@@ -39,6 +39,15 @@ function dropAllTables(db: Database.Database): void {
   console.log('[DB] Old schema detected — tables dropped and will be recreated.');
 }
 
+function migrateTracesTable(db: Database.Database): void {
+  const cols = db.prepare('PRAGMA table_info(traces)').all() as { name: string }[];
+  if (cols.length === 0) return; // table not yet created, initSchema will handle it
+  if (!cols.some(c => c.name === 'agent_type')) {
+    db.exec("ALTER TABLE traces ADD COLUMN agent_type TEXT NOT NULL DEFAULT 'unknown'");
+    console.log('[DB] Migrated: added agent_type column to traces');
+  }
+}
+
 function initSchema(db: Database.Database): void {
   if (isSchemaStale(db)) dropAllTables(db);
 
@@ -67,6 +76,7 @@ function initSchema(db: Database.Database): void {
       id               TEXT    PRIMARY KEY,
       session_id       TEXT    NOT NULL,
       run_id           TEXT    NOT NULL,
+      agent_type       TEXT    NOT NULL DEFAULT 'unknown',
       agent            TEXT    NOT NULL,
       port             INTEGER NOT NULL,
       protocol         TEXT    NOT NULL,
@@ -89,6 +99,8 @@ function initSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_traces_session   ON traces(session_id);
     CREATE INDEX IF NOT EXISTS idx_traces_timestamp ON traces(timestamp DESC);
   `);
+
+  migrateTracesTable(db);
 }
 
 // ────────── session / run resolution ──────────
@@ -153,6 +165,7 @@ export function resolveRun(sessionId: string, isNewRun: boolean): string {
 export interface TraceInsert {
   session_id: string;
   run_id: string;
+  agent_type: 'main_agent' | 'subagent' | 'title_gen';
   agent: string;
   port: number;
   protocol: string;
@@ -175,13 +188,13 @@ export function insertTrace(t: TraceInsert): string {
   const id = uuidv4();
   db.prepare(`
     INSERT INTO traces
-      (id, session_id, run_id, agent, port, protocol, timestamp,
+      (id, session_id, run_id, agent_type, agent, port, protocol, timestamp,
        request_method, request_path, request_headers, request_body,
        response_status, response_headers, response_body,
        duration_ms, model, tokens_input, tokens_output)
-    VALUES (?,?,?,?,?,?,?, ?,?,?,?, ?,?,?, ?,?,?,?)
+    VALUES (?,?,?,?,?,?,?,?, ?,?,?,?, ?,?,?, ?,?,?,?)
   `).run(
-    id, t.session_id, t.run_id, t.agent, t.port, t.protocol, t.timestamp,
+    id, t.session_id, t.run_id, t.agent_type, t.agent, t.port, t.protocol, t.timestamp,
     t.request_method, t.request_path, t.request_headers, t.request_body,
     t.response_status, t.response_headers, t.response_body,
     t.duration_ms, t.model, t.tokens_input, t.tokens_output
@@ -208,7 +221,7 @@ export function queryRunsBySession(sessionId: string): unknown[] {
 
 export function queryTracesByRun(runId: string): unknown[] {
   return getDb().prepare(`
-    SELECT id, session_id, run_id, agent, port, protocol, timestamp,
+    SELECT id, session_id, run_id, agent_type, agent, port, protocol, timestamp,
            request_method, request_path, response_status,
            duration_ms, model, tokens_input, tokens_output
     FROM traces WHERE run_id = ? ORDER BY timestamp ASC
@@ -217,7 +230,7 @@ export function queryTracesByRun(runId: string): unknown[] {
 
 export function queryTracesBySession(sessionId: string): unknown[] {
   return getDb().prepare(`
-    SELECT id, session_id, run_id, agent, port, protocol, timestamp,
+    SELECT id, session_id, run_id, agent_type, agent, port, protocol, timestamp,
            request_method, request_path, response_status,
            duration_ms, model, tokens_input, tokens_output
     FROM traces WHERE session_id = ? ORDER BY timestamp ASC

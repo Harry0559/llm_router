@@ -33,15 +33,30 @@ function extractExternalSessionId(body: Record<string, unknown>): string {
   }
 }
 
+export type AgentType = 'main_agent' | 'subagent' | 'title_gen';
+
 /**
- * A trace starts a NEW run when the last element of messages:
- *   - has role === "user", AND
- *   - every item in content has type === "text"
- *
- * Any other pattern (tool_result, non-user role, etc.) means the trace
- * is a continuation of the current run.
+ * Classify the caller based on the tools array:
+ *   - no tools           → title_gen  (CC title-generation call)
+ *   - tools includes     → main_agent (only main agent holds the Agent tool)
+ *     name === 'Agent'
+ *   - tools but no Agent → subagent
  */
-function detectNewRun(body: Record<string, unknown>): boolean {
+function classifyAgentType(body: Record<string, unknown>): AgentType {
+  const tools = body.tools as { name: string }[] | undefined;
+  if (!tools || tools.length === 0) return 'title_gen';
+  if (tools.some(t => t.name === 'Agent')) return 'main_agent';
+  return 'subagent';
+}
+
+/**
+ * A new run starts only when the main agent receives a fresh user message
+ * (last message role=user with all-text content, no tool_result).
+ * Subagent and title_gen traces never open a new run.
+ */
+function isNewRunStart(body: Record<string, unknown>, agentType: AgentType): boolean {
+  if (agentType !== 'main_agent') return false;
+
   const messages = body.messages as unknown[] | undefined;
   if (!messages || messages.length === 0) return true;
 
@@ -49,7 +64,6 @@ function detectNewRun(body: Record<string, unknown>): boolean {
   if (last.role !== 'user') return false;
 
   const content = last.content;
-  // Plain string content counts as text
   if (typeof content === 'string') return true;
   if (!Array.isArray(content) || content.length === 0) return false;
 
@@ -74,10 +88,11 @@ async function handleProxy(req: Request, res: Response, protocol: 'anthropic' | 
   const startTime = Date.now();
 
   const requestBody = req.body as Record<string, unknown>;
-  const externalId = extractExternalSessionId(requestBody);
-  const sessionId  = resolveSession(externalId);
-  const isNew      = detectNewRun(requestBody);
-  const runId      = resolveRun(sessionId, isNew);
+  const externalId  = extractExternalSessionId(requestBody);
+  const sessionId   = resolveSession(externalId);
+  const agentType   = classifyAgentType(requestBody);
+  const isNew       = isNewRunStart(requestBody, agentType);
+  const runId       = resolveRun(sessionId, isNew);
 
   const isStreaming    = requestBody.stream === true;
   const upstreamHeaders = buildRequestHeaders(req);
@@ -101,14 +116,21 @@ async function handleProxy(req: Request, res: Response, protocol: 'anthropic' | 
   } catch (err: unknown) {
     const axiosErr = err as { response?: { status: number; data: unknown; headers: unknown }; message: string };
     const status = axiosErr.response?.status ?? 502;
-    const body   = axiosErr.response?.data ?? { error: axiosErr.message };
+    const rawData = axiosErr.response?.data;
+    let body: unknown;
+    try {
+      JSON.stringify(rawData);
+      body = rawData ?? { error: axiosErr.message };
+    } catch {
+      body = { error: axiosErr.message };
+    }
 
     if (!res.headersSent) res.status(status).json(body);
 
     const duration = Date.now() - startTime;
     const model    = (requestBody.model as string) || '';
     const traceId  = insertTrace({
-      session_id: sessionId, run_id: runId, agent: protocol, port: PROXY_PORT, protocol,
+      session_id: sessionId, run_id: runId, agent_type: agentType, agent: protocol, port: PROXY_PORT, protocol,
       timestamp: startTime, request_method: req.method, request_path: req.path,
       request_headers: JSON.stringify(sanitizedReqHeaders),
       request_body: JSON.stringify(requestBody),
@@ -158,7 +180,7 @@ async function handleProxy(req: Request, res: Response, protocol: 'anthropic' | 
       const duration = Date.now() - startTime;
 
       const traceId = insertTrace({
-        session_id: sessionId, run_id: runId, agent: protocol, port: PROXY_PORT, protocol,
+        session_id: sessionId, run_id: runId, agent_type: agentType, agent: protocol, port: PROXY_PORT, protocol,
         timestamp: startTime, request_method: req.method, request_path: req.path,
         request_headers: JSON.stringify(sanitizedReqHeaders),
         request_body: JSON.stringify(requestBody),
@@ -202,7 +224,7 @@ async function handleProxy(req: Request, res: Response, protocol: 'anthropic' | 
     }
 
     const traceId = insertTrace({
-      session_id: sessionId, run_id: runId, agent: protocol, port: PROXY_PORT, protocol,
+      session_id: sessionId, run_id: runId, agent_type: agentType, agent: protocol, port: PROXY_PORT, protocol,
       timestamp: startTime, request_method: req.method, request_path: req.path,
       request_headers: JSON.stringify(sanitizedReqHeaders),
       request_body: JSON.stringify(requestBody),
