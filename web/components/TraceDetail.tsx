@@ -7,6 +7,7 @@ import { AGENT_LABELS } from '@/lib/types';
 import MessageViewer from './MessageViewer';
 import ResponseViewer from './ResponseViewer';
 import JsonViewer from './JsonViewer';
+import DiffViewer from './DiffViewer';
 import { buildTraceMessagesExport, downloadJsonFile, traceExportToJson } from '@/lib/exportTraceMessages';
 
 function StatusBadge({ status }: { status: number }) {
@@ -23,12 +24,19 @@ function MetaRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-type TabKey = 'messages' | 'response' | 'raw_req' | 'raw_res' | 'headers';
+type TabKey = 'messages' | 'response' | 'raw_req' | 'raw_res' | 'headers' | 'diff';
 
-export default function TraceDetail({ traceId }: { traceId: string }) {
-  const [trace, setTrace] = useState<TraceDetailType | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<TabKey>('messages');
+interface Props {
+  traceId: string;
+  pinnedTraceId: string | null;
+  onPin: (id: string | null) => void;
+}
+
+export default function TraceDetail({ traceId, pinnedTraceId, onPin }: Props) {
+  const [trace,       setTrace]       = useState<TraceDetailType | null>(null);
+  const [pinnedTrace, setPinnedTrace] = useState<TraceDetailType | null>(null);
+  const [loading,     setLoading]     = useState(true);
+  const [tab,         setTab]         = useState<TabKey>('messages');
 
   useEffect(() => {
     setLoading(true);
@@ -38,6 +46,11 @@ export default function TraceDetail({ traceId }: { traceId: string }) {
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [traceId]);
+
+  useEffect(() => {
+    if (!pinnedTraceId) { setPinnedTrace(null); return; }
+    fetchTrace(pinnedTraceId).then(setPinnedTrace).catch(console.error);
+  }, [pinnedTraceId]);
 
   if (loading) {
     return (
@@ -57,12 +70,15 @@ export default function TraceDetail({ traceId }: { traceId: string }) {
 
   const ts = new Date(trace.timestamp).toLocaleString('zh-CN');
 
+  const hasDiff = pinnedTraceId !== null && pinnedTraceId !== traceId;
+
   const tabs: { key: TabKey; label: string }[] = [
     { key: 'messages',  label: 'Messages' },
     { key: 'response',  label: 'Response' },
     { key: 'raw_req',   label: 'Raw Request' },
     { key: 'raw_res',   label: 'Raw Response' },
     { key: 'headers',   label: 'Headers' },
+    ...(hasDiff ? [{ key: 'diff' as TabKey, label: 'Diff' }] : []),
   ];
 
   return (
@@ -97,20 +113,36 @@ export default function TraceDetail({ traceId }: { traceId: string }) {
       </div>
 
       {/* ── Tabs ── */}
-      <div className="flex border-b border-gray-800 shrink-0 bg-gray-900/30">
-        {tabs.map(t => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`px-4 py-2 text-xs font-medium transition-colors border-b-2 ${
-              tab === t.key
-                ? 'border-blue-500 text-blue-400'
-                : 'border-transparent text-gray-500 hover:text-gray-300'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="flex items-center border-b border-gray-800 shrink-0 bg-gray-900/30">
+        <div className="flex flex-1">
+          {tabs.map(t => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`px-4 py-2 text-xs font-medium transition-colors border-b-2 ${
+                tab === t.key
+                  ? t.key === 'diff'
+                    ? 'border-orange-500 text-orange-400'
+                    : 'border-blue-500 text-blue-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        {/* Pin button */}
+        <button
+          type="button"
+          onClick={() => onPin(pinnedTraceId === traceId ? null : traceId)}
+          className={`mr-3 px-2 py-1 text-[11px] rounded border transition-colors shrink-0 ${
+            pinnedTraceId === traceId
+              ? 'border-orange-600 text-orange-400 bg-orange-900/20 hover:bg-orange-900/40'
+              : 'border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-500'
+          }`}
+        >
+          {pinnedTraceId === traceId ? '📌 已锁定' : '锁定为基准'}
+        </button>
       </div>
 
       {/* ── Tab content ── */}
@@ -130,6 +162,11 @@ export default function TraceDetail({ traceId }: { traceId: string }) {
           <div className="bg-gray-900/50 rounded-md p-3">
             <JsonViewer data={trace.response_body} defaultExpand={3} />
           </div>
+        )}
+        {tab === 'diff' && hasDiff && (
+          pinnedTrace
+            ? <DiffViewer traceA={trace} traceB={pinnedTrace} />
+            : <p className="text-gray-500 text-sm">加载基准 trace 中…</p>
         )}
         {tab === 'headers' && (
           <div className="space-y-4">

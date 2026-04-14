@@ -7,6 +7,7 @@ import { fetchRunTraces, fetchSessionTraces } from '@/lib/api';
 interface Props {
   source: { type: 'run'; runId: string } | { type: 'session'; sessionId: string };
   selectedId: string | null;
+  pinnedId: string | null;
   onSelect: (id: string) => void;
   refreshTick: number;
 }
@@ -41,7 +42,7 @@ const FILTER_TYPES: { key: TraceSummary['agent_type']; label: string; active: st
   { key: 'title_gen',  label: 'Title', active: 'bg-gray-700/60 text-gray-400',     inactive: 'bg-gray-800 text-gray-600' },
 ];
 
-export default function TraceList({ source, selectedId, onSelect, refreshTick }: Props) {
+export default function TraceList({ source, selectedId, pinnedId, onSelect, refreshTick }: Props) {
   const [traces, setTraces] = useState<TraceSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Set<TraceSummary['agent_type']>>(
@@ -104,6 +105,8 @@ export default function TraceList({ source, selectedId, onSelect, refreshTick }:
             className={`w-full text-left px-3 py-2.5 border-b border-gray-800/50 transition-colors ${
               selectedId === trace.id
                 ? 'bg-blue-900/20 border-l-2 border-l-blue-500'
+                : pinnedId === trace.id
+                ? 'bg-orange-900/10 border-l-2 border-l-orange-500'
                 : 'hover:bg-gray-800/40 border-l-2 border-l-transparent'
             }`}
           >

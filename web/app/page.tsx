@@ -64,6 +64,7 @@ export default function HomePage() {
   const [selectedRun,     setSelectedRun]     = useState<string | null>(null);
   const [allTraces,       setAllTraces]       = useState(false);
   const [selectedTrace,   setSelectedTrace]   = useState<string | null>(null);
+  const [pinnedTrace,     setPinnedTrace]     = useState<string | null>(null);
   const [sessionTick, setSessionTick] = useState(0);
   const [runTick,     setRunTick]     = useState(0);
   const [traceTick,   setTraceTick]   = useState(0);
@@ -135,6 +136,7 @@ export default function HomePage() {
     setSelectedRun(null);
     setAllTraces(false);
     setSelectedTrace(null);
+    setPinnedTrace(null);
     setRunTick(t => t + 1);
   }
 
@@ -145,6 +147,7 @@ export default function HomePage() {
       setSelectedRun(null);
       setAllTraces(false);
       setSelectedTrace(null);
+      setPinnedTrace(null);
     }
   }
 
@@ -220,6 +223,7 @@ export default function HomePage() {
           <TraceList
             source={{ type: 'run', runId: selectedRun }}
             selectedId={selectedTrace}
+            pinnedId={pinnedTrace}
             onSelect={setSelectedTrace}
             refreshTick={traceTick}
           />
@@ -227,6 +231,7 @@ export default function HomePage() {
           <TraceList
             source={{ type: 'session', sessionId: selectedSession }}
             selectedId={selectedTrace}
+            pinnedId={pinnedTrace}
             onSelect={setSelectedTrace}
             refreshTick={traceTick}
           />
@@ -240,7 +245,12 @@ export default function HomePage() {
       {/* ── Col 4: Detail (always visible) ── */}
       <main className="flex-1 overflow-hidden flex flex-col bg-gray-950">
         {selectedTrace ? (
-          <TraceDetail key={selectedTrace} traceId={selectedTrace} />
+          <TraceDetail
+            key={selectedTrace}
+            traceId={selectedTrace}
+            pinnedTraceId={pinnedTrace}
+            onPin={setPinnedTrace}
+          />
         ) : (
           <div className="flex items-center justify-center h-full">
             <div className="text-center text-gray-700">
