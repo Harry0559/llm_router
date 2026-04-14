@@ -41,6 +41,8 @@ export default function TraceDetail({ traceId, pinnedTraceId, onPin }: Props) {
   const [tab,         setTab]         = useState<TabKey>('messages');
   const [localNotes,  setLocalNotes]  = useState<string | null>(null);
   const [notesKey,    setNotesKey]    = useState(0); // force NotesEditor reset on trace change
+  const [allExpanded, setAllExpanded] = useState(false);
+  const [viewerKey,   setViewerKey]   = useState(0);
 
   useEffect(() => {
     setLoading(true);
@@ -75,6 +77,21 @@ export default function TraceDetail({ traceId, pinnedTraceId, onPin }: Props) {
   }
 
   const ts = new Date(trace.timestamp).toLocaleString('zh-CN');
+
+  const JSON_TABS = new Set<TabKey>(['raw_req', 'raw_res', 'headers']);
+
+  function handleTabChange(key: TabKey) {
+    setTab(key);
+    if (JSON_TABS.has(key)) {
+      setAllExpanded(false);
+      setViewerKey(k => k + 1);
+    }
+  }
+
+  function toggleExpand() {
+    setAllExpanded(v => !v);
+    setViewerKey(k => k + 1);
+  }
 
   const hasDiff = pinnedTraceId !== null && pinnedTraceId !== traceId;
 
@@ -134,7 +151,7 @@ export default function TraceDetail({ traceId, pinnedTraceId, onPin }: Props) {
           {tabs.map(t => (
             <button
               key={t.key}
-              onClick={() => setTab(t.key)}
+              onClick={() => handleTabChange(t.key)}
               className={`px-4 py-2 text-xs font-medium transition-colors border-b-2 ${
                 tab === t.key
                   ? t.key === 'diff'
@@ -147,6 +164,16 @@ export default function TraceDetail({ traceId, pinnedTraceId, onPin }: Props) {
             </button>
           ))}
         </div>
+        {/* Expand/collapse all — only for JSON tabs */}
+        {JSON_TABS.has(tab) && (
+          <button
+            type="button"
+            onClick={toggleExpand}
+            className="mr-2 px-2 py-1 text-[11px] rounded border border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-500 transition-colors shrink-0"
+          >
+            {allExpanded ? '收缩全部' : '展开全部'}
+          </button>
+        )}
         {/* Pin button */}
         <button
           type="button"
@@ -171,12 +198,12 @@ export default function TraceDetail({ traceId, pinnedTraceId, onPin }: Props) {
         )}
         {tab === 'raw_req' && (
           <div className="bg-gray-900/50 rounded-md p-3">
-            <JsonViewer data={trace.request_body} defaultExpand={3} />
+            <JsonViewer key={viewerKey} data={trace.request_body} defaultExpand={allExpanded ? 999 : 3} />
           </div>
         )}
         {tab === 'raw_res' && (
           <div className="bg-gray-900/50 rounded-md p-3">
-            <JsonViewer data={trace.response_body} defaultExpand={3} />
+            <JsonViewer key={viewerKey} data={trace.response_body} defaultExpand={allExpanded ? 999 : 3} />
           </div>
         )}
         {tab === 'diff' && hasDiff && (
@@ -189,13 +216,13 @@ export default function TraceDetail({ traceId, pinnedTraceId, onPin }: Props) {
             <div>
               <h3 className="text-xs font-bold text-gray-400 mb-2 uppercase tracking-wide">Request Headers</h3>
               <div className="bg-gray-900/50 rounded-md p-3">
-                <JsonViewer data={trace.request_headers} defaultExpand={2} />
+                <JsonViewer key={viewerKey} data={trace.request_headers} defaultExpand={allExpanded ? 999 : 2} />
               </div>
             </div>
             <div>
               <h3 className="text-xs font-bold text-gray-400 mb-2 uppercase tracking-wide">Response Headers</h3>
               <div className="bg-gray-900/50 rounded-md p-3">
-                <JsonViewer data={trace.response_headers} defaultExpand={2} />
+                <JsonViewer key={`${viewerKey}-res`} data={trace.response_headers} defaultExpand={allExpanded ? 999 : 2} />
               </div>
             </div>
           </div>
