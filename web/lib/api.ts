@@ -20,6 +20,12 @@ export async function fetchRunTraces(runId: string): Promise<TraceSummary[]> {
   return r.json() as Promise<TraceSummary[]>;
 }
 
+export async function fetchSessionTraces(sessionId: string): Promise<TraceSummary[]> {
+  const r = await fetch(`${BASE}/api/sessions/${sessionId}/traces`, { cache: 'no-store' });
+  if (!r.ok) throw new Error(`session traces: ${r.status}`);
+  return r.json() as Promise<TraceSummary[]>;
+}
+
 export async function fetchTrace(id: string): Promise<TraceDetail> {
   const r = await fetch(`${BASE}/api/traces/${id}`, { cache: 'no-store' });
   if (!r.ok) throw new Error(`trace: ${r.status}`);

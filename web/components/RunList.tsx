@@ -7,7 +7,9 @@ import { fetchRuns, deleteRun } from '@/lib/api';
 interface Props {
   sessionId: string;
   selectedId: string | null;
+  allSelected: boolean;
   onSelect: (id: string) => void;
+  onSelectAll: () => void;
   onDeleted: (id: string) => void;
   refreshTick: number;
 }
@@ -16,7 +18,7 @@ function timeStr(ts: number): string {
   return new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-export default function RunList({ sessionId, selectedId, onSelect, onDeleted, refreshTick }: Props) {
+export default function RunList({ sessionId, selectedId, allSelected, onSelect, onSelectAll, onDeleted, refreshTick }: Props) {
   const [runs, setRuns] = useState<Run[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -46,6 +48,21 @@ export default function RunList({ sessionId, selectedId, onSelect, onDeleted, re
 
       {/* List */}
       <div className="flex-1 overflow-y-auto">
+        {/* All Traces entry */}
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={onSelectAll}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectAll(); } }}
+          className={`w-full text-left px-3 py-2.5 border-b border-gray-800/50 transition-colors cursor-pointer ${
+            allSelected
+              ? 'bg-blue-900/20 border-l-2 border-l-blue-500'
+              : 'hover:bg-gray-800/40 border-l-2 border-l-transparent'
+          }`}
+        >
+          <span className="text-xs font-semibold text-gray-300">All Traces</span>
+        </div>
+
         {!loading && runs.length === 0 && (
           <p className="text-gray-600 text-xs text-center py-8">暂无 run</p>
         )}

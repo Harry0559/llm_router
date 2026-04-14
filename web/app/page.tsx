@@ -62,6 +62,7 @@ export default function HomePage() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
   const [selectedRun,     setSelectedRun]     = useState<string | null>(null);
+  const [allTraces,       setAllTraces]       = useState(false);
   const [selectedTrace,   setSelectedTrace]   = useState<string | null>(null);
   const [sessionTick, setSessionTick] = useState(0);
   const [runTick,     setRunTick]     = useState(0);
@@ -101,7 +102,9 @@ export default function HomePage() {
 
           if (data.session_id === selectedSession) {
             setRunTick(t => t + 1);
-            if (data.run_id === selectedRun) {
+            if (allTraces) {
+              setTraceTick(t => t + 1);
+            } else if (data.run_id === selectedRun) {
               setTraceTick(t => t + 1);
             } else if (data.run_id && !selectedRun) {
               setSelectedRun(data.run_id);
@@ -125,11 +128,12 @@ export default function HomePage() {
     connect();
     return () => { clearTimeout(retryTimer); es?.close(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSession, selectedRun, loadSessions]);
+  }, [selectedSession, selectedRun, allTraces, loadSessions]);
 
   function handleSelectSession(id: string) {
     setSelectedSession(id);
     setSelectedRun(null);
+    setAllTraces(false);
     setSelectedTrace(null);
     setRunTick(t => t + 1);
   }
@@ -139,12 +143,21 @@ export default function HomePage() {
     if (selectedSession === id) {
       setSelectedSession(null);
       setSelectedRun(null);
+      setAllTraces(false);
       setSelectedTrace(null);
     }
   }
 
   function handleSelectRun(id: string) {
     setSelectedRun(id);
+    setAllTraces(false);
+    setSelectedTrace(null);
+    setTraceTick(t => t + 1);
+  }
+
+  function handleSelectAllTraces() {
+    setSelectedRun(null);
+    setAllTraces(true);
     setSelectedTrace(null);
     setTraceTick(t => t + 1);
   }
@@ -152,6 +165,7 @@ export default function HomePage() {
   function handleDeletedRun(id: string) {
     if (selectedRun === id) {
       setSelectedRun(null);
+      setAllTraces(false);
       setSelectedTrace(null);
     }
     loadSessions();
@@ -187,7 +201,9 @@ export default function HomePage() {
           <RunList
             sessionId={selectedSession}
             selectedId={selectedRun}
+            allSelected={allTraces}
             onSelect={handleSelectRun}
+            onSelectAll={handleSelectAllTraces}
             onDeleted={handleDeletedRun}
             refreshTick={runTick}
           />
@@ -202,7 +218,14 @@ export default function HomePage() {
       <Col label="Traces" open={col3Open} onToggle={() => setCol3Open(v => !v)} expandedWidth="w-52">
         {selectedRun ? (
           <TraceList
-            runId={selectedRun}
+            source={{ type: 'run', runId: selectedRun }}
+            selectedId={selectedTrace}
+            onSelect={setSelectedTrace}
+            refreshTick={traceTick}
+          />
+        ) : allTraces && selectedSession ? (
+          <TraceList
+            source={{ type: 'session', sessionId: selectedSession }}
             selectedId={selectedTrace}
             onSelect={setSelectedTrace}
             refreshTick={traceTick}
