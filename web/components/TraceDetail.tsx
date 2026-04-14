@@ -41,7 +41,7 @@ export default function TraceDetail({ traceId, pinnedTraceId, onPin }: Props) {
   const [tab,         setTab]         = useState<TabKey>('messages');
   const [localNotes,  setLocalNotes]  = useState<string | null>(null);
   const [notesKey,    setNotesKey]    = useState(0); // force NotesEditor reset on trace change
-  const [allExpanded, setAllExpanded] = useState(false);
+  const [allExpanded, setAllExpanded] = useState<'collapsed' | 'default' | 'expanded'>('default');
   const [viewerKey,   setViewerKey]   = useState(0);
 
   useEffect(() => {
@@ -83,15 +83,17 @@ export default function TraceDetail({ traceId, pinnedTraceId, onPin }: Props) {
   function handleTabChange(key: TabKey) {
     setTab(key);
     if (JSON_TABS.has(key)) {
-      setAllExpanded(false);
+      setAllExpanded('default');
       setViewerKey(k => k + 1);
     }
   }
 
-  function toggleExpand() {
-    setAllExpanded(v => !v);
+  function setExpand(state: 'collapsed' | 'default' | 'expanded') {
+    setAllExpanded(state);
     setViewerKey(k => k + 1);
   }
+
+  const expandDepth = allExpanded === 'collapsed' ? 1 : allExpanded === 'default' ? 3 : 999;
 
   const hasDiff = pinnedTraceId !== null && pinnedTraceId !== traceId;
 
@@ -166,13 +168,22 @@ export default function TraceDetail({ traceId, pinnedTraceId, onPin }: Props) {
         </div>
         {/* Expand/collapse all — only for JSON tabs */}
         {JSON_TABS.has(tab) && (
-          <button
-            type="button"
-            onClick={toggleExpand}
-            className="mr-2 px-2 py-1 text-[11px] rounded border border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-500 transition-colors shrink-0"
-          >
-            {allExpanded ? '收缩全部' : '展开全部'}
-          </button>
+          <div className="flex gap-1 mr-2">
+            {(['collapsed', 'default', 'expanded'] as const).map(state => (
+              <button
+                key={state}
+                type="button"
+                onClick={() => setExpand(state)}
+                className={`px-2 py-1 text-[11px] rounded border transition-colors shrink-0 ${
+                  allExpanded === state
+                    ? 'border-blue-600 text-blue-400 bg-blue-900/20'
+                    : 'border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-500'
+                }`}
+              >
+                {state === 'collapsed' ? '折叠' : state === 'default' ? '默认' : '展开'}
+              </button>
+            ))}
+          </div>
         )}
         {/* Pin button */}
         <button
@@ -198,12 +209,12 @@ export default function TraceDetail({ traceId, pinnedTraceId, onPin }: Props) {
         )}
         {tab === 'raw_req' && (
           <div className="bg-gray-900/50 rounded-md p-3">
-            <JsonViewer key={viewerKey} data={trace.request_body} defaultExpand={allExpanded ? 999 : 3} />
+            <JsonViewer key={viewerKey} data={trace.request_body} defaultExpand={expandDepth} />
           </div>
         )}
         {tab === 'raw_res' && (
           <div className="bg-gray-900/50 rounded-md p-3">
-            <JsonViewer key={viewerKey} data={trace.response_body} defaultExpand={allExpanded ? 999 : 3} />
+            <JsonViewer key={viewerKey} data={trace.response_body} defaultExpand={expandDepth} />
           </div>
         )}
         {tab === 'diff' && hasDiff && (
@@ -216,13 +227,13 @@ export default function TraceDetail({ traceId, pinnedTraceId, onPin }: Props) {
             <div>
               <h3 className="text-xs font-bold text-gray-400 mb-2 uppercase tracking-wide">Request Headers</h3>
               <div className="bg-gray-900/50 rounded-md p-3">
-                <JsonViewer key={viewerKey} data={trace.request_headers} defaultExpand={allExpanded ? 999 : 2} />
+                <JsonViewer key={viewerKey} data={trace.request_headers} defaultExpand={expandDepth} />
               </div>
             </div>
             <div>
               <h3 className="text-xs font-bold text-gray-400 mb-2 uppercase tracking-wide">Response Headers</h3>
               <div className="bg-gray-900/50 rounded-md p-3">
-                <JsonViewer key={`${viewerKey}-res`} data={trace.response_headers} defaultExpand={allExpanded ? 999 : 2} />
+                <JsonViewer key={`${viewerKey}-res`} data={trace.response_headers} defaultExpand={expandDepth} />
               </div>
             </div>
           </div>
