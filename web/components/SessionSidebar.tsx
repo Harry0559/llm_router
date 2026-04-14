@@ -1,8 +1,10 @@
 'use client';
 
 import type { KeyboardEvent, MouseEvent } from 'react';
+import { useState } from 'react';
 import type { Session } from '@/lib/types';
-import { deleteSession } from '@/lib/api';
+import { deleteSession, updateSessionNotes } from '@/lib/api';
+import NotesEditor from './NotesEditor';
 
 interface Props {
   sessions: Session[];
@@ -28,10 +30,18 @@ export default function SessionSidebar({
   onClearAll,
   connected,
 }: Props) {
+  // local notes overrides (optimistic update before next fetch)
+  const [notesOverride, setNotesOverride] = useState<Record<string, string | null>>({});
+
   async function handleDelete(e: MouseEvent, id: string) {
     e.stopPropagation();
     await deleteSession(id);
     onDeleted(id);
+  }
+
+  async function handleSaveNotes(sessionId: string, notes: string) {
+    await updateSessionNotes(sessionId, notes);
+    setNotesOverride(prev => ({ ...prev, [sessionId]: notes || null }));
   }
 
   return (
@@ -94,6 +104,15 @@ export default function SessionSidebar({
                 ✕
               </button>
             </div>
+            {selectedId === session.id && (
+              <div className="mt-1.5 pt-1.5 border-t border-gray-800/80" onClick={e => e.stopPropagation()}>
+                <NotesEditor
+                  compact
+                  notes={notesOverride[session.id] !== undefined ? notesOverride[session.id] : session.notes}
+                  onSave={(n) => handleSaveNotes(session.id, n)}
+                />
+              </div>
+            )}
           </div>
         ))}
       </div>

@@ -4,6 +4,7 @@ export interface Session {
   created_at: number;
   updated_at: number;
   run_count: number;
+  notes: string | null;
 }
 
 export interface Run {
@@ -12,6 +13,7 @@ export interface Run {
   created_at: number;
   updated_at: number;
   trace_count: number;
+  notes: string | null;
 }
 
 export interface TraceSummary {
@@ -30,6 +32,7 @@ export interface TraceSummary {
   model: string;
   tokens_input: number;
   tokens_output: number;
+  notes: string | null;
 }
 
 export interface TraceDetail extends TraceSummary {

@@ -48,6 +48,18 @@ function migrateTracesTable(db: Database.Database): void {
   }
 }
 
+function migrateNotesColumns(db: Database.Database): void {
+  const tables = ['sessions', 'runs', 'traces'] as const;
+  for (const table of tables) {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (cols.length === 0) continue; // not yet created
+    if (!cols.some(c => c.name === 'notes')) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN notes TEXT`);
+      console.log(`[DB] Migrated: added notes column to ${table}`);
+    }
+  }
+}
+
 function initSchema(db: Database.Database): void {
   if (isSchemaStale(db)) dropAllTables(db);
 
@@ -57,7 +69,8 @@ function initSchema(db: Database.Database): void {
       external_id TEXT    NOT NULL UNIQUE,
       created_at  INTEGER NOT NULL,
       updated_at  INTEGER NOT NULL,
-      run_count   INTEGER NOT NULL DEFAULT 0
+      run_count   INTEGER NOT NULL DEFAULT 0,
+      notes       TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_sessions_external ON sessions(external_id);
 
@@ -67,6 +80,7 @@ function initSchema(db: Database.Database): void {
       created_at  INTEGER NOT NULL,
       updated_at  INTEGER NOT NULL,
       trace_count INTEGER NOT NULL DEFAULT 0,
+      notes       TEXT,
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_runs_session   ON runs(session_id);
@@ -92,6 +106,7 @@ function initSchema(db: Database.Database): void {
       model            TEXT,
       tokens_input     INTEGER,
       tokens_output    INTEGER,
+      notes            TEXT,
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
       FOREIGN KEY (run_id)     REFERENCES runs(id)     ON DELETE CASCADE
     );
@@ -101,6 +116,7 @@ function initSchema(db: Database.Database): void {
   `);
 
   migrateTracesTable(db);
+  migrateNotesColumns(db);
 }
 
 // ────────── session / run resolution ──────────
@@ -223,7 +239,7 @@ export function queryTracesByRun(runId: string): unknown[] {
   return getDb().prepare(`
     SELECT id, session_id, run_id, agent_type, agent, port, protocol, timestamp,
            request_method, request_path, response_status,
-           duration_ms, model, tokens_input, tokens_output
+           duration_ms, model, tokens_input, tokens_output, notes
     FROM traces WHERE run_id = ? ORDER BY timestamp ASC
   `).all(runId);
 }
@@ -232,13 +248,27 @@ export function queryTracesBySession(sessionId: string): unknown[] {
   return getDb().prepare(`
     SELECT id, session_id, run_id, agent_type, agent, port, protocol, timestamp,
            request_method, request_path, response_status,
-           duration_ms, model, tokens_input, tokens_output
+           duration_ms, model, tokens_input, tokens_output, notes
     FROM traces WHERE session_id = ? ORDER BY timestamp ASC
   `).all(sessionId);
 }
 
 export function queryTraceById(id: string): unknown {
   return getDb().prepare('SELECT * FROM traces WHERE id = ?').get(id);
+}
+
+// ────────── notes update ──────────
+
+export function updateSessionNotes(id: string, notes: string): void {
+  getDb().prepare('UPDATE sessions SET notes = ? WHERE id = ?').run(notes || null, id);
+}
+
+export function updateRunNotes(id: string, notes: string): void {
+  getDb().prepare('UPDATE runs SET notes = ? WHERE id = ?').run(notes || null, id);
+}
+
+export function updateTraceNotes(id: string, notes: string): void {
+  getDb().prepare('UPDATE traces SET notes = ? WHERE id = ?').run(notes || null, id);
 }
 
 // ────────── delete / clear ──────────

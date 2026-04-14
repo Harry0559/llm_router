@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import type { Run } from '@/lib/types';
-import { fetchRuns, deleteRun } from '@/lib/api';
+import { fetchRuns, deleteRun, updateRunNotes } from '@/lib/api';
+import NotesEditor from './NotesEditor';
 
 interface Props {
   sessionId: string;
@@ -21,6 +22,7 @@ function timeStr(ts: number): string {
 export default function RunList({ sessionId, selectedId, allSelected, onSelect, onSelectAll, onDeleted, refreshTick }: Props) {
   const [runs, setRuns] = useState<Run[]>([]);
   const [loading, setLoading] = useState(true);
+  const [notesOverride, setNotesOverride] = useState<Record<string, string | null>>({});
 
   useEffect(() => {
     setLoading(true);
@@ -35,6 +37,11 @@ export default function RunList({ sessionId, selectedId, allSelected, onSelect, 
     await deleteRun(id);
     onDeleted(id);
     setRuns(r => r.filter(x => x.id !== id));
+  }
+
+  async function handleSaveNotes(runId: string, notes: string) {
+    await updateRunNotes(runId, notes);
+    setNotesOverride(prev => ({ ...prev, [runId]: notes || null }));
   }
 
   return (
@@ -97,6 +104,15 @@ export default function RunList({ sessionId, selectedId, allSelected, onSelect, 
               </div>
             </div>
             <div className="text-xs text-gray-600">{timeStr(run.created_at)}</div>
+            {selectedId === run.id && (
+              <div className="mt-1.5 pt-1.5 border-t border-gray-800/80" onClick={e => e.stopPropagation()}>
+                <NotesEditor
+                  compact
+                  notes={notesOverride[run.id] !== undefined ? notesOverride[run.id] : run.notes}
+                  onSave={(n) => handleSaveNotes(run.id, n)}
+                />
+              </div>
+            )}
           </div>
         ))}
       </div>

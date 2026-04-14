@@ -9,6 +9,8 @@ import ResponseViewer from './ResponseViewer';
 import JsonViewer from './JsonViewer';
 import DiffViewer from './DiffViewer';
 import { buildTraceMessagesExport, downloadJsonFile, traceExportToJson } from '@/lib/exportTraceMessages';
+import { updateTraceNotes } from '@/lib/api';
+import NotesEditor from './NotesEditor';
 
 function StatusBadge({ status }: { status: number }) {
   const color = status < 300 ? 'bg-green-600' : status < 400 ? 'bg-yellow-600' : 'bg-red-600';
@@ -37,10 +39,14 @@ export default function TraceDetail({ traceId, pinnedTraceId, onPin }: Props) {
   const [pinnedTrace, setPinnedTrace] = useState<TraceDetailType | null>(null);
   const [loading,     setLoading]     = useState(true);
   const [tab,         setTab]         = useState<TabKey>('messages');
+  const [localNotes,  setLocalNotes]  = useState<string | null>(null);
+  const [notesKey,    setNotesKey]    = useState(0); // force NotesEditor reset on trace change
 
   useEffect(() => {
     setLoading(true);
     setTrace(null);
+    setLocalNotes(null);
+    setNotesKey(k => k + 1);
     fetchTrace(traceId)
       .then(setTrace)
       .catch(console.error)
@@ -109,6 +115,16 @@ export default function TraceDetail({ traceId, pinnedTraceId, onPin }: Props) {
           <MetaRow label="duration" value={`${trace.duration_ms} ms`} />
           <MetaRow label="tokens in"  value={<span className="text-yellow-300">{trace.tokens_input ?? '—'}</span>} />
           <MetaRow label="tokens out" value={<span className="text-green-300">{trace.tokens_output ?? '—'}</span>} />
+        </div>
+        <div className="mt-2 pt-2 border-t border-gray-800/60">
+          <NotesEditor
+            key={notesKey}
+            notes={localNotes !== null ? localNotes : trace.notes}
+            onSave={async (n) => {
+              await updateTraceNotes(trace.id, n);
+              setLocalNotes(n || null);
+            }}
+          />
         </div>
       </div>
 

@@ -10,6 +10,9 @@ import {
   deleteSession,
   deleteRun,
   clearAll,
+  updateSessionNotes,
+  updateRunNotes,
+  updateTraceNotes,
 } from './db';
 
 export function createApiApp(): express.Application {
@@ -42,6 +45,12 @@ export function createApiApp(): express.Application {
     res.json({ ok: true });
   });
 
+  app.patch('/api/sessions/:id/notes', (req, res) => {
+    const { notes } = req.body as { notes: string };
+    updateSessionNotes(req.params.id, notes ?? '');
+    res.json({ ok: true });
+  });
+
   // ── Runs ───────────────────────────────────────────────────────────────
   app.get('/api/sessions/:id/runs', (req, res) => {
     res.json(queryRunsBySession(req.params.id));
@@ -49,6 +58,12 @@ export function createApiApp(): express.Application {
 
   app.delete('/api/runs/:id', (req, res) => {
     deleteRun(req.params.id);
+    res.json({ ok: true });
+  });
+
+  app.patch('/api/runs/:id/notes', (req, res) => {
+    const { notes } = req.body as { notes: string };
+    updateRunNotes(req.params.id, notes ?? '');
     res.json({ ok: true });
   });
 
@@ -66,6 +81,12 @@ export function createApiApp(): express.Application {
     const trace = queryTraceById(req.params.id);
     if (!trace) return res.status(404).json({ error: 'not found' });
     return res.json(trace);
+  });
+
+  app.patch('/api/traces/:id/notes', (req, res) => {
+    const { notes } = req.body as { notes: string };
+    updateTraceNotes(req.params.id, notes ?? '');
+    res.json({ ok: true });
   });
 
   // ── Admin ──────────────────────────────────────────────────────────────

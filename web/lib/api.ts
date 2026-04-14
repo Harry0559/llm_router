@@ -44,6 +44,30 @@ export async function clearAllData(): Promise<void> {
   await fetch(`${BASE}/api/data/all`, { method: 'DELETE' });
 }
 
+export async function updateSessionNotes(id: string, notes: string): Promise<void> {
+  await fetch(`${BASE}/api/sessions/${id}/notes`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ notes }),
+  });
+}
+
+export async function updateRunNotes(id: string, notes: string): Promise<void> {
+  await fetch(`${BASE}/api/runs/${id}/notes`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ notes }),
+  });
+}
+
+export async function updateTraceNotes(id: string, notes: string): Promise<void> {
+  await fetch(`${BASE}/api/traces/${id}/notes`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ notes }),
+  });
+}
+
 export function createEventSource(): EventSource {
   return new EventSource(`${BASE}/api/events`);
 }

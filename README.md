@@ -54,6 +54,36 @@ npm run dev
 
 ---
 
+## URL 配置说明
+
+代理的 URL 转发规则极简：**将 agent 请求中的 `http://localhost:7878` 直接替换为 `LLM_UPSTREAM_URL`**，路径原样透传，不做任何增删。
+
+```
+agent → http://localhost:7878{path}
+proxy → LLM_UPSTREAM_URL + {path}
+```
+
+因此两个地址的配置关系为：
+
+| 配置项 | 填写内容 |
+|---|---|
+| agent 的 base URL | `http://localhost:7878`（固定，替代原来的上游地址） |
+| `LLM_UPSTREAM_URL` | 原来在 agent 里填的上游 base URL |
+
+**示例：** 原先 agent 配置为 `https://api.openbitfun.com/v1`，接入代理后：
+
+```bash
+# agent 改为指向代理
+export ANTHROPIC_BASE_URL=http://localhost:7878
+
+# 代理指向原上游（填原来 agent 里的地址）
+export LLM_UPSTREAM_URL=https://api.openbitfun.com/v1
+```
+
+路径流：agent 发 `/messages` → 代理拼接 → `https://api.openbitfun.com/v1/messages`，与直连结果完全一致。
+
+---
+
 ## 接入你的 Agent
 
 将 agent 的 base URL 改为 `http://localhost:7878`，API Key 和其他参数保持不变，代理原样透传所有请求头，agent 无感知。
@@ -139,6 +169,22 @@ Run 列表顶部有 **All Traces** 入口，可跳过 Run 分组直接查看该 
 - **新增的消息**（绿色，默认展开）：仅在对比 trace 中出现的消息，可能包含压缩后的摘要
 
 判断规则：只要有消息消失（`removed > 0`），即提示可能发生了压缩。
+
+---
+
+## 备注系统
+
+Session、Run、Trace 三个层级均支持添加研究备注，持久化存储在 SQLite 中，重启后保留。
+
+**使用方式：**
+
+- **Session 备注**：在左侧 Session 列表中点击选中某个 session，底部出现 📝 备注区域
+- **Run 备注**：在 Run 列表中点击选中某个 run，底部出现 📝 备注区域
+- **Trace 备注**：在右侧详情面板 header 的 token 信息下方，始终可见
+
+点击 📝 图标或「添加备注…」文字展开输入框，**⌘↵**（或 Ctrl+↵）保存，**Esc** 取消。已有备注时显示黄色文字预览。
+
+适合在观测实验过程中随手记录当时的判断，例如「此处发生了压缩」「agent 在此开始重新读文件」，方便事后回溯分析。
 
 ---
 
