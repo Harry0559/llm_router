@@ -112,19 +112,25 @@ export default function DiffViewer({ traceA, traceB }: { traceA: TraceDetail; tr
     return <p className="text-gray-500 text-sm p-2">请选择不同的 trace 进行对比。</p>;
   }
 
-  const [early, late] = traceA.timestamp <= traceB.timestamp ? [traceA, traceB] : [traceB, traceA];
-  const msgsA = parseMessages(early.request_body);
-  const msgsB = parseMessages(late.request_body);
+  // traceB = pinned（基准），traceA = 当前选中（对比）
+  const base = traceB;
+  const cmp  = traceA;
 
-  if (!msgsA || !msgsB) {
+  const msgsBase = parseMessages(base.request_body);
+  const msgsCmp  = parseMessages(cmp.request_body);
+
+  if (!msgsBase || !msgsCmp) {
     return <p className="text-red-400 text-sm p-2">无法解析 messages，请确认两条 trace 均为 LLM 请求。</p>;
   }
 
-  const { inA, inB } = computeLCS(msgsA.map(msgKey), msgsB.map(msgKey));
-  const removed = msgsA.filter((_, i) => !inA.has(i));
-  const added   = msgsB.filter((_, i) => !inB.has(i));
-  const same    = msgsA.filter((_, i) =>  inA.has(i));
+  const { inA, inB } = computeLCS(msgsBase.map(msgKey), msgsCmp.map(msgKey));
+  const removed = msgsBase.filter((_, i) => !inA.has(i));
+  const added   = msgsCmp.filter((_, i)  => !inB.has(i));
+  const same    = msgsBase.filter((_, i) =>  inA.has(i));
   const compressed = removed.length > 0;
+
+  const fmtTime = (ts: number) =>
+    new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
   return (
     <div className="space-y-4">
@@ -138,8 +144,14 @@ export default function DiffViewer({ traceA, traceB }: { traceA: TraceDetail; tr
           {compressed ? '⚠ 可能发生了上下文压缩' : '✓ 未检测到压缩'}
         </div>
         <div className="text-xs text-gray-400 space-y-0.5">
-          <div>基准（早）：{msgsA.length} 条消息 · {early.tokens_input ?? '—'} tokens in</div>
-          <div>对比（晚）：{msgsB.length} 条消息 · {late.tokens_input ?? '—'} tokens in</div>
+          <div>
+            <span className="text-orange-400/80">基准（锁定）</span>
+            ：{msgsBase.length} 条消息 · {base.tokens_input ?? '—'} tokens in · {fmtTime(base.timestamp)}
+          </div>
+          <div>
+            <span className="text-blue-400/80">对比（当前）</span>
+            ：{msgsCmp.length} 条消息 · {cmp.tokens_input ?? '—'} tokens in · {fmtTime(cmp.timestamp)}
+          </div>
           <div className="pt-1.5 flex gap-3">
             <span>消失 <span className="text-red-400 font-semibold">{removed.length}</span></span>
             <span>新增 <span className="text-green-400 font-semibold">{added.length}</span></span>
