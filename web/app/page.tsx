@@ -7,6 +7,7 @@ import SessionSidebar from '@/components/SessionSidebar';
 import RunList from '@/components/RunList';
 import TraceList from '@/components/TraceList';
 import TraceDetail from '@/components/TraceDetail';
+import { SettingsProvider } from '@/contexts/SettingsContext';
 
 // ── Collapsible column wrapper ────────────────────────────────────────────────
 interface ColProps {
@@ -184,6 +185,7 @@ export default function HomePage() {
   }
 
   return (
+    <SettingsProvider>
     <div className="flex h-screen overflow-hidden bg-gray-950">
 
       {/* ── Col 1: Sessions ── */}
@@ -262,5 +264,6 @@ export default function HomePage() {
         )}
       </main>
     </div>
+    </SettingsProvider>
   );
 }

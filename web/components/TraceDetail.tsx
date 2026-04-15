@@ -11,6 +11,7 @@ import DiffViewer from './DiffViewer';
 import { buildTraceMessagesExport, downloadJsonFile, traceExportToJson } from '@/lib/exportTraceMessages';
 import { updateTraceNotes } from '@/lib/api';
 import NotesEditor from './NotesEditor';
+import { FullMeter } from './ContextMeter';
 
 function StatusBadge({ status }: { status: number }) {
   const color = status < 300 ? 'bg-green-600' : status < 400 ? 'bg-yellow-600' : 'bg-red-600';
@@ -132,7 +133,14 @@ export default function TraceDetail({ traceId, pinnedTraceId, onPin }: Props) {
           <MetaRow label="time"     value={ts} />
           <MetaRow label="model"    value={trace.model} />
           <MetaRow label="duration" value={`${trace.duration_ms} ms`} />
-          <MetaRow label="tokens in"  value={<span className="text-yellow-300">{trace.tokens_input ?? '—'}</span>} />
+          <MetaRow label="tokens in"  value={
+            <span className="inline-flex items-center gap-2">
+              <span className="text-yellow-300">{trace.tokens_input ?? '—'}</span>
+              {trace.tokens_input && trace.model && (
+                <FullMeter tokensInput={trace.tokens_input} model={trace.model} />
+              )}
+            </span>
+          } />
           <MetaRow label="tokens out" value={<span className="text-green-300">{trace.tokens_output ?? '—'}</span>} />
         </div>
         <div className="mt-2 pt-2 border-t border-gray-800/60">

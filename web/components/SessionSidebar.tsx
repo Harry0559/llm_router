@@ -5,6 +5,7 @@ import { useState } from 'react';
 import type { Session } from '@/lib/types';
 import { deleteSession, updateSessionNotes } from '@/lib/api';
 import NotesEditor from './NotesEditor';
+import SettingsModal from './SettingsModal';
 
 interface Props {
   sessions: Session[];
@@ -32,6 +33,14 @@ export default function SessionSidebar({
 }: Props) {
   // local notes overrides (optimistic update before next fetch)
   const [notesOverride, setNotesOverride] = useState<Record<string, string | null>>({});
+  // Settings modal — use a key so reopening always mounts fresh
+  const [settingsKey, setSettingsKey] = useState(0);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  function openSettings() {
+    setSettingsKey(k => k + 1);
+    setSettingsOpen(true);
+  }
 
   async function handleDelete(e: MouseEvent, id: string) {
     e.stopPropagation();
@@ -117,14 +126,28 @@ export default function SessionSidebar({
         ))}
       </div>
 
+      {/* Settings modal */}
+      {settingsOpen && (
+        <SettingsModal key={settingsKey} onClose={() => setSettingsOpen(false)} />
+      )}
+
       {/* Footer */}
-      <div className="border-t border-gray-800 p-2 shrink-0">
+      <div className="border-t border-gray-800 px-2 py-1.5 shrink-0 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={openSettings}
+          title="设置"
+          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-200 transition-colors px-1.5 py-1 rounded hover:bg-gray-800"
+        >
+          <span>⚙</span>
+          <span>设置</span>
+        </button>
         <button
           type="button"
           onClick={onClearAll}
-          className="w-full text-xs text-gray-600 hover:text-red-400 py-1 transition-colors"
+          className="text-xs text-gray-600 hover:text-red-400 py-1 px-1.5 transition-colors"
         >
-          清空所有数据
+          清空
         </button>
       </div>
     </div>
