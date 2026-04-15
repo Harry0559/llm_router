@@ -13,7 +13,8 @@ interface Props {
 const HEIGHT = 52;
 const PAD_X = 6;
 const PAD_Y = 6;
-const DOT_R = 3;
+const DOT_R_MAX = 3;   // normal dot radius when spacing is generous
+const DOT_R_MIN = 1.5; // minimum dot radius when crowded
 
 export default function Sparkline({ traces, selectedId, pinnedId, onSelect }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -31,8 +32,11 @@ export default function Sparkline({ traces, selectedId, pinnedId, onSelect }: Pr
     return () => ro.disconnect();
   }, []);
 
-  // Only main_agent traces, sorted by timestamp (already sorted from API)
-  const pts = traces.filter(t => t.agent_type === 'main_agent');
+  // Only successful main_agent traces with token data.
+  // Exclude failed requests (status >= 300) to avoid false compression detection.
+  const pts = traces.filter(
+    t => t.agent_type === 'main_agent' && t.response_status < 300 && t.tokens_input > 0
+  );
   if (pts.length === 0) return null;
 
   const n = pts.length;
@@ -44,6 +48,14 @@ export default function Sparkline({ traces, selectedId, pinnedId, onSelect }: Pr
   const plotW = width - PAD_X * 2;
   const plotH = HEIGHT - PAD_Y * 2;
 
+  // Pixel spacing between adjacent points
+  const spacing = n > 1 ? plotW / (n - 1) : plotW;
+
+  // Adaptive dot radius and visibility
+  const dotR = spacing >= 10 ? DOT_R_MAX : Math.max(DOT_R_MIN, spacing / 4);
+  // Hide normal dots when very crowded; always show selected/pinned/hovered
+  const showNormalDots = spacing >= 5;
+
   function cx(i: number) {
     return PAD_X + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
   }
@@ -51,8 +63,7 @@ export default function Sparkline({ traces, selectedId, pinnedId, onSelect }: Pr
     return PAD_Y + plotH - ((v - minTok) / range) * plotH;
   }
 
-  // A segment from index i to i+1 is a "compression drop" if tokens decrease
-  const hoveredTrace = hoveredId ? pts.find(t => t.id === hoveredId) : null;
+  const hoveredTrace = hoveredId ? pts.find(t => t.id === hoveredId) ?? null : null;
 
   return (
     <div ref={containerRef} className="relative w-full select-none" style={{ height: HEIGHT }}>
@@ -63,7 +74,7 @@ export default function Sparkline({ traces, selectedId, pinnedId, onSelect }: Pr
           return (
             <line
               key={`seg-${i}`}
-              x1={cx(i)}   y1={cy(t.tokens_input)}
+              x1={cx(i)}     y1={cy(t.tokens_input)}
               x2={cx(i + 1)} y2={cy(pts[i + 1].tokens_input)}
               stroke={isDrop ? '#f59e0b' : '#3b82f6'}
               strokeWidth={1.5}
@@ -73,13 +84,15 @@ export default function Sparkline({ traces, selectedId, pinnedId, onSelect }: Pr
           );
         })}
 
-        {/* Dots */}
+        {/* Dots + hit areas */}
         {pts.map((t, i) => {
           const x = cx(i);
           const y = cy(t.tokens_input);
           const isSelected = t.id === selectedId;
-          const isPinned = t.id === pinnedId;
-          const isDrop = i > 0 && t.tokens_input < pts[i - 1].tokens_input;
+          const isPinned   = t.id === pinnedId;
+          const isHovered  = t.id === hoveredId;
+          const isDrop     = i > 0 && t.tokens_input < pts[i - 1].tokens_input;
+          const isSpecial  = isSelected || isPinned || isHovered;
 
           return (
             <g
@@ -89,17 +102,31 @@ export default function Sparkline({ traces, selectedId, pinnedId, onSelect }: Pr
               onMouseLeave={() => setHoveredId(null)}
               style={{ cursor: 'pointer' }}
             >
+              {/* Transparent wider hit target for dense charts */}
+              <rect
+                x={x - Math.max(8, spacing / 2)}
+                y={0}
+                width={Math.max(16, spacing)}
+                height={HEIGHT}
+                fill="transparent"
+              />
+
               {isPinned && (
-                <circle cx={x} cy={y} r={DOT_R + 5} fill="none" stroke="#f97316" strokeWidth={1.5} opacity={0.8} />
+                <circle cx={x} cy={y} r={DOT_R_MAX + 5} fill="none" stroke="#f97316" strokeWidth={1.5} opacity={0.8} />
               )}
               {isSelected && (
-                <circle cx={x} cy={y} r={DOT_R + 3} fill="none" stroke="#3b82f6" strokeWidth={1.5} />
+                <circle cx={x} cy={y} r={DOT_R_MAX + 3} fill="none" stroke="#3b82f6" strokeWidth={1.5} />
               )}
-              <circle
-                cx={x} cy={y} r={DOT_R}
-                fill={isDrop ? '#f59e0b' : isSelected ? '#3b82f6' : '#60a5fa'}
-                opacity={0.9}
-              />
+
+              {/* Dot — always show for special states; hide for normal in crowded charts */}
+              {(showNormalDots || isSpecial) && (
+                <circle
+                  cx={x} cy={y}
+                  r={isSpecial ? DOT_R_MAX : dotR}
+                  fill={isDrop ? '#f59e0b' : isSelected ? '#3b82f6' : '#60a5fa'}
+                  opacity={0.9}
+                />
+              )}
             </g>
           );
         })}
@@ -111,7 +138,6 @@ export default function Sparkline({ traces, selectedId, pinnedId, onSelect }: Pr
         const x = cx(i);
         const y = cy(hoveredTrace.tokens_input);
         const isDrop = i > 0 && hoveredTrace.tokens_input < pts[i - 1].tokens_input;
-        // keep tooltip inside container
         const tipLeft = Math.min(x + 10, width - 160);
         const tipTop  = Math.max(y - 30, 0);
         return (
@@ -123,7 +149,9 @@ export default function Sparkline({ traces, selectedId, pinnedId, onSelect }: Pr
             <span className="text-gray-500"> tok</span>
             {isDrop && <span className="text-amber-400 ml-1">↓ compress</span>}
             {hoveredTrace.model && (
-              <span className="text-gray-500 ml-1 text-[10px]">{hoveredTrace.model.replace(/^(claude|gpt)-/, '')}</span>
+              <span className="text-gray-500 ml-1 text-[10px]">
+                {hoveredTrace.model.replace(/^(claude|gpt)-/, '')}
+              </span>
             )}
           </div>
         );
