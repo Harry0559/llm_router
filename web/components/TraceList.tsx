@@ -13,6 +13,8 @@ interface Props {
   pinnedId: string | null;
   onSelect: (id: string) => void;
   refreshTick: number;
+  /** Called with the source and loaded trace IDs after traces are fetched. */
+  onSource?: (source: Props['source'], ids: string[]) => void;
 }
 
 function StatusDot({ status }: { status: number }) {
@@ -61,7 +63,7 @@ function TokenInfo({ tokensInput, tokensOutput, model }: {
   );
 }
 
-export default function TraceList({ source, selectedId, pinnedId, onSelect, refreshTick }: Props) {
+export default function TraceList({ source, selectedId, pinnedId, onSelect, refreshTick, onSource }: Props) {
   const { settings } = useSettings();
   const [traces, setTraces] = useState<TraceSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,7 +85,7 @@ export default function TraceList({ source, selectedId, pinnedId, onSelect, refr
     const req = source.type === 'run'
       ? fetchRunTraces(source.runId)
       : fetchSessionTraces(source.sessionId);
-    req.then(setTraces).catch(console.error).finally(() => setLoading(false));
+    req.then(t => { setTraces(t); onSource?.(source, t.map(x => x.id)); }).catch(console.error).finally(() => setLoading(false));
   }, [source.type, source.type === 'run' ? source.runId : source.sessionId, refreshTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Scroll to bottom when new traces arrive
