@@ -33,7 +33,7 @@ interface OpenAIResponse {
   usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 }
 
-function AnthropicResponseView({ body }: { body: AnthropicResponse }) {
+function AnthropicResponseView({ body, expandDepth = 3 }: { body: AnthropicResponse; expandDepth?: number }) {
   const content = body.content ?? [];
   return (
     <div className="space-y-3">
@@ -64,7 +64,7 @@ function AnthropicResponseView({ body }: { body: AnthropicResponse }) {
           } else {
             body = (
               <div className="mt-2">
-                <JsonViewer data={t ?? block} defaultExpand={2} />
+                <JsonViewer data={t ?? block} defaultExpand={expandDepth} />
               </div>
             );
           }
@@ -84,12 +84,12 @@ function AnthropicResponseView({ body }: { body: AnthropicResponse }) {
                 {block.id && <span className="text-gray-500 text-xs ml-auto">{block.id}</span>}
               </div>
               <div className="bg-black/30 rounded p-2">
-                <JsonViewer data={block.input} defaultExpand={3} />
+                <JsonViewer data={block.input} defaultExpand={expandDepth} />
               </div>
             </div>
           );
         }
-        return <JsonViewer key={i} data={block} defaultExpand={2} />;
+        return <JsonViewer key={i} data={block} defaultExpand={expandDepth} />;
       })}
 
       {content.length === 0 && (
@@ -99,7 +99,7 @@ function AnthropicResponseView({ body }: { body: AnthropicResponse }) {
   );
 }
 
-function OpenAIResponseView({ body }: { body: OpenAIResponse }) {
+function OpenAIResponseView({ body, expandDepth = 3 }: { body: OpenAIResponse; expandDepth?: number }) {
   const choice = body.choices?.[0];
   const msg = choice?.message;
   const toolCalls = msg?.tool_calls as unknown[] | undefined;
@@ -141,7 +141,7 @@ function OpenAIResponseView({ body }: { body: OpenAIResponse }) {
               {t.id && <span className="text-gray-500 text-xs ml-auto">{t.id}</span>}
             </div>
             <div className="bg-black/30 rounded p-2">
-              <JsonViewer data={parsedArgs} defaultExpand={3} />
+              <JsonViewer data={parsedArgs} defaultExpand={expandDepth} />
             </div>
           </div>
         );
@@ -153,9 +153,10 @@ function OpenAIResponseView({ body }: { body: OpenAIResponse }) {
 interface ResponseViewerProps {
   responseBody: unknown;
   protocol: string;
+  expandDepth?: number;
 }
 
-export default function ResponseViewer({ responseBody, protocol }: ResponseViewerProps) {
+export default function ResponseViewer({ responseBody, protocol, expandDepth = 3 }: ResponseViewerProps) {
   let body: Record<string, unknown>;
   if (typeof responseBody === 'string') {
     try { body = JSON.parse(responseBody) as Record<string, unknown>; }
@@ -165,7 +166,7 @@ export default function ResponseViewer({ responseBody, protocol }: ResponseViewe
   }
 
   if (protocol === 'anthropic') {
-    return <AnthropicResponseView body={body as AnthropicResponse} />;
+    return <AnthropicResponseView body={body as AnthropicResponse} expandDepth={expandDepth} />;
   }
-  return <OpenAIResponseView body={body as OpenAIResponse} />;
+  return <OpenAIResponseView body={body as OpenAIResponse} expandDepth={expandDepth} />;
 }

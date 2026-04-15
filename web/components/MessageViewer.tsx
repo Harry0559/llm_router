@@ -49,8 +49,10 @@ const ROLE_COLOR: Record<string, string> = {
 
 // ─── Tool Use Block ───────────────────────────────────────────────────────────
 
-function ToolUseBlock({ block }: { block: ContentBlock }) {
-  const [open, setOpen] = useState(false);
+function ToolUseBlock({ block, initialOpen = false, expandDepth }: {
+  block: ContentBlock; initialOpen?: boolean; expandDepth: number;
+}) {
+  const [open, setOpen] = useState(initialOpen);
   return (
     <div className="tool-use-block">
       <div className="flex items-center gap-2 mb-2">
@@ -69,7 +71,7 @@ function ToolUseBlock({ block }: { block: ContentBlock }) {
           </button>
           {open && (
             <div className="bg-black/30 rounded p-2">
-              <JsonViewer data={block.input} defaultExpand={3} />
+              <JsonViewer data={block.input} defaultExpand={expandDepth} />
             </div>
           )}
         </div>
@@ -80,8 +82,10 @@ function ToolUseBlock({ block }: { block: ContentBlock }) {
 
 // ─── Tool Result Block ────────────────────────────────────────────────────────
 
-function ToolResultBlock({ block }: { block: ContentBlock }) {
-  const [open, setOpen] = useState(false);
+function ToolResultBlock({ block, initialOpen = false, expandDepth }: {
+  block: ContentBlock; initialOpen?: boolean; expandDepth: number;
+}) {
+  const [open, setOpen] = useState(initialOpen);
   const content = block.content;
   const preview = typeof content === 'string'
     ? content.slice(0, 120) + (content.length > 120 ? '…' : '')
@@ -103,7 +107,7 @@ function ToolResultBlock({ block }: { block: ContentBlock }) {
           <div className="bg-black/30 rounded p-2">
             {typeof content === 'string'
               ? <pre className="text-xs text-gray-300 whitespace-pre-wrap break-all">{content}</pre>
-              : <JsonViewer data={content} defaultExpand={2} />
+              : <JsonViewer data={content} defaultExpand={expandDepth} />
             }
           </div>
         )}
@@ -120,9 +124,11 @@ function ToolResultBlock({ block }: { block: ContentBlock }) {
 
 // ─── Content Block renderer ───────────────────────────────────────────────────
 
-function ContentBlockView({ block }: { block: ContentBlock }) {
-  if (block.type === 'tool_use') return <ToolUseBlock block={block} />;
-  if (block.type === 'tool_result') return <ToolResultBlock block={block} />;
+function ContentBlockView({ block, blockOpen, expandDepth }: {
+  block: ContentBlock; blockOpen?: boolean; expandDepth: number;
+}) {
+  if (block.type === 'tool_use') return <ToolUseBlock block={block} initialOpen={blockOpen} expandDepth={expandDepth} />;
+  if (block.type === 'tool_result') return <ToolResultBlock block={block} initialOpen={blockOpen} expandDepth={expandDepth} />;
   if (block.type === 'text') {
     const t = block.text;
     if (typeof t === 'string') {
@@ -137,26 +143,26 @@ function ContentBlockView({ block }: { block: ContentBlock }) {
         <div className="space-y-2">
           {t.map((item, i) =>
             isContentBlock(item) ? (
-              <ContentBlockView key={i} block={item} />
+              <ContentBlockView key={i} block={item} blockOpen={blockOpen} expandDepth={expandDepth} />
             ) : (
-              <JsonViewer key={i} data={item} defaultExpand={2} />
+              <JsonViewer key={i} data={item} defaultExpand={expandDepth} />
             ),
           )}
         </div>
       );
     }
     if (t != null && typeof t === 'object') {
-      if (isContentBlock(t)) return <ContentBlockView block={t} />;
-      return <JsonViewer data={t} defaultExpand={2} />;
+      if (isContentBlock(t)) return <ContentBlockView block={t} blockOpen={blockOpen} expandDepth={expandDepth} />;
+      return <JsonViewer data={t} defaultExpand={expandDepth} />;
     }
-    return <JsonViewer data={block} defaultExpand={2} />;
+    return <JsonViewer data={block} defaultExpand={expandDepth} />;
   }
   // Fallback: show as JSON
-  return <JsonViewer data={block} defaultExpand={2} />;
+  return <JsonViewer data={block} defaultExpand={expandDepth} />;
 }
 
 /** Anthropic `system` may be string, a single block, or block[]. */
-function renderSystemContent(system: unknown): ReactNode {
+function renderSystemContent(system: unknown, expandDepth: number): ReactNode {
   if (system == null || system === '') return null;
   if (typeof system === 'string') {
     return (
@@ -170,9 +176,9 @@ function renderSystemContent(system: unknown): ReactNode {
       <div className="mt-2 space-y-2">
         {system.map((item, i) =>
           isContentBlock(item) ? (
-            <ContentBlockView key={i} block={item} />
+            <ContentBlockView key={i} block={item} expandDepth={expandDepth} />
           ) : (
-            <JsonViewer key={i} data={item} defaultExpand={2} />
+            <JsonViewer key={i} data={item} defaultExpand={expandDepth} />
           ),
         )}
       </div>
@@ -181,20 +187,22 @@ function renderSystemContent(system: unknown): ReactNode {
   if (isContentBlock(system)) {
     return (
       <div className="mt-2">
-        <ContentBlockView block={system} />
+        <ContentBlockView block={system} expandDepth={expandDepth} />
       </div>
     );
   }
   return (
     <div className="mt-2">
-      <JsonViewer data={system} defaultExpand={2} />
+      <JsonViewer data={system} defaultExpand={expandDepth} />
     </div>
   );
 }
 
 // ─── Single Message ───────────────────────────────────────────────────────────
 
-function MessageCard({ msg, index }: { msg: Message; index: number }) {
+function MessageCard({ msg, index, blockOpen, expandDepth }: {
+  msg: Message; index: number; blockOpen?: boolean; expandDepth: number;
+}) {
   const style = ROLE_STYLE[msg.role] ?? 'border-gray-500/40 bg-gray-900/40';
   const labelColor = ROLE_COLOR[msg.role] ?? 'text-gray-400';
   const label = ROLE_LABEL[msg.role] ?? msg.role.toUpperCase();
@@ -215,13 +223,13 @@ function MessageCard({ msg, index }: { msg: Message; index: number }) {
       ) : Array.isArray(content) ? (
         <div>
           {content.map((block, i) => (
-            <ContentBlockView key={i} block={block as ContentBlock} />
+            <ContentBlockView key={i} block={block as ContentBlock} blockOpen={blockOpen} expandDepth={expandDepth} />
           ))}
         </div>
       ) : isContentBlock(content) ? (
-        <ContentBlockView block={content} />
+        <ContentBlockView block={content} blockOpen={blockOpen} expandDepth={expandDepth} />
       ) : (
-        <JsonViewer data={content} />
+        <JsonViewer data={content} defaultExpand={expandDepth} />
       )}
     </div>
   );
@@ -232,9 +240,10 @@ function MessageCard({ msg, index }: { msg: Message; index: number }) {
 interface MessageViewerProps {
   requestBody: unknown;
   protocol: string;
+  expandOverride?: 'collapsed' | 'default' | 'expanded';
 }
 
-export default function MessageViewer({ requestBody, protocol }: MessageViewerProps) {
+export default function MessageViewer({ requestBody, protocol, expandOverride = 'default' }: MessageViewerProps) {
   const parsed = useMemo(() => {
     if (typeof requestBody === 'string') {
       try {
@@ -268,6 +277,10 @@ export default function MessageViewer({ requestBody, protocol }: MessageViewerPr
     }
   }, [parsed]);
 
+  const expandDepth = expandOverride === 'collapsed' ? 1 : expandOverride === 'default' ? 3 : 999;
+  const blockOpen = expandOverride === 'expanded';
+  const [toolsOpen, setToolsOpen] = useState(blockOpen);
+
   if (!parsed.ok) {
     return <pre className="text-xs text-gray-400">{parsed.raw}</pre>;
   }
@@ -292,25 +305,32 @@ export default function MessageViewer({ requestBody, protocol }: MessageViewerPr
       {body.system != null && body.system !== '' && (
         <div className="border border-amber-500/40 bg-amber-950/20 rounded-md p-3">
           <span className="text-xs font-bold text-amber-400">SYSTEM</span>
-          {renderSystemContent(body.system)}
+          {renderSystemContent(body.system, expandDepth)}
         </div>
       )}
 
       {/* Messages */}
       {messages.map((msg, i) => (
-        <MessageCard key={i} msg={msg} index={i} />
+        <MessageCard key={i} msg={msg} index={i} blockOpen={blockOpen} expandDepth={expandDepth} />
       ))}
 
       {/* Tools definition (collapsible) */}
       {tools && tools.length > 0 && (
-        <details className="border border-gray-700 rounded-md">
-          <summary className="px-3 py-2 text-xs text-gray-400 cursor-pointer hover:text-gray-200">
+        <div className="border border-gray-700 rounded-md">
+          <button
+            type="button"
+            onClick={() => setToolsOpen(o => !o)}
+            className="w-full text-left px-3 py-2 text-xs text-gray-400 hover:text-gray-200 flex items-center gap-1"
+          >
+            <span className="text-xs leading-none">{toolsOpen ? '▾' : '▸'}</span>
             Tools definition ({tools.length})
-          </summary>
-          <div className="p-3 bg-black/20">
-            <JsonViewer data={tools} defaultExpand={1} />
-          </div>
-        </details>
+          </button>
+          {toolsOpen && (
+            <div className="p-3 bg-black/20">
+              <JsonViewer data={tools} defaultExpand={expandDepth} />
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

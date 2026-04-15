@@ -58,10 +58,10 @@ function computeLCS(a: string[], b: string[]): { inA: Set<number>; inB: Set<numb
 
 // ── sub-components ────────────────────────────────────────────────────────────
 
-function MsgItem({ msg, prefix, colorCls, bgCls }: {
-  msg: Msg; prefix: string; colorCls: string; bgCls: string;
+function MsgItem({ msg, prefix, colorCls, bgCls, initialExpanded = false }: {
+  msg: Msg; prefix: string; colorCls: string; bgCls: string; initialExpanded?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initialExpanded);
   const preview = previewContent(msg.content);
   return (
     <button
@@ -107,7 +107,11 @@ function Section({ title, count, colorCls, borderCls, defaultOpen, empty, childr
 
 // ── main component ────────────────────────────────────────────────────────────
 
-export default function DiffViewer({ traceA, traceB }: { traceA: TraceDetail; traceB: TraceDetail }) {
+export default function DiffViewer({ traceA, traceB, expandOverride = 'default' }: {
+  traceA: TraceDetail;
+  traceB: TraceDetail;
+  expandOverride?: 'collapsed' | 'default' | 'expanded';
+}) {
   if (traceA.id === traceB.id) {
     return <p className="text-gray-500 text-sm p-2">请选择不同的 trace 进行对比。</p>;
   }
@@ -134,6 +138,12 @@ export default function DiffViewer({ traceA, traceB }: { traceA: TraceDetail; tr
 
   const fmtTime = (ts: number) =>
     new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  // Derive open/expanded states from expandOverride
+  const msgExpanded    = expandOverride === 'expanded';
+  const removedOpen    = expandOverride !== 'collapsed';   // default: open
+  const addedOpen      = expandOverride !== 'collapsed';   // default: open
+  const sameOpen       = expandOverride === 'expanded';    // default: closed
 
   return (
     <div className="space-y-4">
@@ -165,25 +175,25 @@ export default function DiffViewer({ traceA, traceB }: { traceA: TraceDetail; tr
 
       {/* Removed */}
       <Section title="消失的消息" count={removed.length} colorCls="text-red-400"
-        borderCls="border-red-700/60" defaultOpen={true} empty="无">
+        borderCls="border-red-700/60" defaultOpen={removedOpen} empty="无">
         {removed.map((msg, i) => (
-          <MsgItem key={i} msg={msg} prefix="✕" colorCls="text-red-400" bgCls="bg-red-900/20" />
+          <MsgItem key={i} msg={msg} prefix="✕" colorCls="text-red-400" bgCls="bg-red-900/20" initialExpanded={msgExpanded} />
         ))}
       </Section>
 
       {/* Same */}
       <Section title="共同消息" count={same.length} colorCls="text-gray-500"
-        borderCls="border-gray-700" defaultOpen={false} empty="无">
+        borderCls="border-gray-700" defaultOpen={sameOpen} empty="无">
         {same.map((msg, i) => (
-          <MsgItem key={i} msg={msg} prefix="≡" colorCls="text-gray-500" bgCls="bg-gray-800/30" />
+          <MsgItem key={i} msg={msg} prefix="≡" colorCls="text-gray-500" bgCls="bg-gray-800/30" initialExpanded={msgExpanded} />
         ))}
       </Section>
 
       {/* Added */}
       <Section title="新增的消息" count={added.length} colorCls="text-green-400"
-        borderCls="border-green-700/60" defaultOpen={true} empty="无">
+        borderCls="border-green-700/60" defaultOpen={addedOpen} empty="无">
         {added.map((msg, i) => (
-          <MsgItem key={i} msg={msg} prefix="＋" colorCls="text-green-400" bgCls="bg-green-900/20" />
+          <MsgItem key={i} msg={msg} prefix="＋" colorCls="text-green-400" bgCls="bg-green-900/20" initialExpanded={msgExpanded} />
         ))}
       </Section>
     </div>

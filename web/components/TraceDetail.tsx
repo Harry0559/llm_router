@@ -78,11 +78,11 @@ export default function TraceDetail({ traceId, pinnedTraceId, onPin }: Props) {
 
   const ts = new Date(trace.timestamp).toLocaleString('zh-CN');
 
-  const JSON_TABS = new Set<TabKey>(['raw_req', 'raw_res', 'headers']);
+  const EXPANDABLE_TABS = new Set<TabKey>(['raw_req', 'raw_res', 'headers', 'messages', 'response', 'diff']);
 
   function handleTabChange(key: TabKey) {
     setTab(key);
-    if (JSON_TABS.has(key)) {
+    if (EXPANDABLE_TABS.has(key)) {
       setAllExpanded('default');
       setViewerKey(k => k + 1);
     }
@@ -166,8 +166,8 @@ export default function TraceDetail({ traceId, pinnedTraceId, onPin }: Props) {
             </button>
           ))}
         </div>
-        {/* Expand/collapse all — only for JSON tabs */}
-        {JSON_TABS.has(tab) && (
+        {/* Expand/collapse all */}
+        {EXPANDABLE_TABS.has(tab) && (
           <div className="flex gap-1 mr-2">
             {(['collapsed', 'default', 'expanded'] as const).map(state => (
               <button
@@ -202,10 +202,10 @@ export default function TraceDetail({ traceId, pinnedTraceId, onPin }: Props) {
       {/* ── Tab content ── */}
       <div className="flex-1 overflow-y-auto p-4">
         {tab === 'messages' && (
-          <MessageViewer requestBody={trace.request_body} protocol={trace.protocol} />
+          <MessageViewer key={viewerKey} requestBody={trace.request_body} protocol={trace.protocol} expandOverride={allExpanded} />
         )}
         {tab === 'response' && (
-          <ResponseViewer responseBody={trace.response_body} protocol={trace.protocol} />
+          <ResponseViewer key={viewerKey} responseBody={trace.response_body} protocol={trace.protocol} expandDepth={expandDepth} />
         )}
         {tab === 'raw_req' && (
           <div className="bg-gray-900/50 rounded-md p-3">
@@ -219,7 +219,7 @@ export default function TraceDetail({ traceId, pinnedTraceId, onPin }: Props) {
         )}
         {tab === 'diff' && hasDiff && (
           pinnedTrace
-            ? <DiffViewer traceA={trace} traceB={pinnedTrace} />
+            ? <DiffViewer key={viewerKey} traceA={trace} traceB={pinnedTrace} expandOverride={allExpanded} />
             : <p className="text-gray-500 text-sm">加载基准 trace 中…</p>
         )}
         {tab === 'headers' && (
