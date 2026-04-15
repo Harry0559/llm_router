@@ -18,7 +18,7 @@ interface AnthropicResponse {
   model?: string;
   content?: ContentBlock[];
   stop_reason?: string;
-  usage?: { input_tokens?: number; output_tokens?: number };
+  usage?: { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
 }
 
 interface OpenAIChoice {
@@ -43,7 +43,17 @@ function AnthropicResponseView({ body, expandDepth = 3 }: { body: AnthropicRespo
         {body.stop_reason && <span><span className="text-gray-600">stop </span><span className="text-gray-300">{body.stop_reason}</span></span>}
         {body.usage && (
           <>
-            <span><span className="text-gray-600">in </span><span className="text-yellow-300">{body.usage.input_tokens}</span></span>
+            <span>
+              <span className="text-gray-600">in </span>
+              <span className="text-yellow-300">
+                {(body.usage.input_tokens ?? 0) + (body.usage.cache_creation_input_tokens ?? 0) + (body.usage.cache_read_input_tokens ?? 0)}
+              </span>
+              {((body.usage.cache_creation_input_tokens ?? 0) + (body.usage.cache_read_input_tokens ?? 0)) > 0 && (
+                <span className="text-gray-500 text-[10px] ml-1">
+                  ({body.usage.input_tokens ?? 0}+{body.usage.cache_creation_input_tokens ?? 0}c+{body.usage.cache_read_input_tokens ?? 0}r)
+                </span>
+              )}
+            </span>
             <span><span className="text-gray-600">out </span><span className="text-green-300">{body.usage.output_tokens}</span></span>
           </>
         )}

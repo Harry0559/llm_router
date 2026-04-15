@@ -213,7 +213,9 @@ async function handleProxy(req: Request, res: Response, protocol: 'anthropic' | 
 
     if (protocol === 'anthropic') {
       const usage = (responseBody.usage ?? {}) as Record<string, number>;
-      tokensIn = usage.input_tokens ?? 0;
+      tokensIn = (usage.input_tokens ?? 0)
+        + (usage.cache_creation_input_tokens ?? 0)
+        + (usage.cache_read_input_tokens ?? 0);
       tokensOut = usage.output_tokens ?? 0;
       model = (responseBody.model as string) || model;
     } else {

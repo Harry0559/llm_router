@@ -64,8 +64,11 @@ export function assembleAnthropicStream(sseText: string): AnyObj {
 
 export function getAnthropicTokens(assembled: AnyObj): { input: number; output: number } {
   const usage = (assembled.usage ?? {}) as AnyObj;
+  const input = ((usage.input_tokens as number) ?? 0)
+    + ((usage.cache_creation_input_tokens as number) ?? 0)
+    + ((usage.cache_read_input_tokens as number) ?? 0);
   return {
-    input: (usage.input_tokens as number) ?? 0,
+    input,
     output: (usage.output_tokens as number) ?? 0,
   };
 }
