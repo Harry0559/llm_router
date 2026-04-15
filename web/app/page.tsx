@@ -74,6 +74,7 @@ export default function HomePage() {
   const [col1Open, setCol1Open] = useState(true);
   const [col2Open, setCol2Open] = useState(true);
   const [col3Open, setCol3Open] = useState(true);
+  const [jumpTarget, setJumpTarget] = useState<{ traceId: string; index: number } | null>(null);
 
   const esRef = useRef<EventSource | null>(null);
 
@@ -226,7 +227,7 @@ export default function HomePage() {
             source={{ type: 'run', runId: selectedRun }}
             selectedId={selectedTrace}
             pinnedId={pinnedTrace}
-            onSelect={setSelectedTrace}
+            onSelect={(id) => { setSelectedTrace(id); setJumpTarget(null); }}
             refreshTick={traceTick}
           />
         ) : allTraces && selectedSession ? (
@@ -234,7 +235,7 @@ export default function HomePage() {
             source={{ type: 'session', sessionId: selectedSession }}
             selectedId={selectedTrace}
             pinnedId={pinnedTrace}
-            onSelect={setSelectedTrace}
+            onSelect={(id) => { setSelectedTrace(id); setJumpTarget(null); }}
             refreshTick={traceTick}
           />
         ) : (
@@ -252,6 +253,11 @@ export default function HomePage() {
             traceId={selectedTrace}
             pinnedTraceId={pinnedTrace}
             onPin={setPinnedTrace}
+            jumpTo={jumpTarget}
+            onJumpToMessage={(traceId, index) => {
+              setJumpTarget({ traceId, index });
+              setSelectedTrace(traceId);
+            }}
           />
         ) : (
           <div className="flex items-center justify-center h-full">

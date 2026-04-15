@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { TraceDetail as TraceDetailType } from '@/lib/types';
 import { fetchTrace } from '@/lib/api';
 import { AGENT_LABELS } from '@/lib/types';
@@ -33,9 +33,13 @@ interface Props {
   traceId: string;
   pinnedTraceId: string | null;
   onPin: (id: string | null) => void;
+  /** Jump to a specific message: { traceId, index } and highlight it in the Messages tab. */
+  jumpTo?: { traceId: string; index: number } | null;
+  /** Forwarded from page → TraceDetail → DiffViewer. */
+  onJumpToMessage?: (traceId: string, index: number) => void;
 }
 
-export default function TraceDetail({ traceId, pinnedTraceId, onPin }: Props) {
+export default function TraceDetail({ traceId, pinnedTraceId, onPin, jumpTo, onJumpToMessage }: Props) {
   const [trace,       setTrace]       = useState<TraceDetailType | null>(null);
   const [pinnedTrace, setPinnedTrace] = useState<TraceDetailType | null>(null);
   const [loading,     setLoading]     = useState(true);
@@ -44,6 +48,17 @@ export default function TraceDetail({ traceId, pinnedTraceId, onPin }: Props) {
   const [notesKey,    setNotesKey]    = useState(0); // force NotesEditor reset on trace change
   const [allExpanded, setAllExpanded] = useState<'collapsed' | 'default' | 'expanded'>('default');
   const [viewerKey,   setViewerKey]   = useState(0);
+  // Highlight state — persists across re-renders within the same trace view
+  const [highlightIdx,  setHighlightIdx]  = useState<number | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // When jumpTo changes: switch to Messages tab and apply highlight.
+  // Guard: only apply if this jump is actually targeting THIS trace.
+  useEffect(() => {
+    if (jumpTo == null || jumpTo.traceId !== traceId) return;
+    setHighlightIdx(jumpTo.index);
+    setTab('messages');
+  }, [jumpTo, traceId]);
 
   useEffect(() => {
     setLoading(true);
@@ -60,6 +75,23 @@ export default function TraceDetail({ traceId, pinnedTraceId, onPin }: Props) {
     if (!pinnedTraceId) { setPinnedTrace(null); return; }
     fetchTrace(pinnedTraceId).then(setPinnedTrace).catch(console.error);
   }, [pinnedTraceId]);
+
+  // Scroll to highlighted message once messages are rendered.
+  // We own the scroll container here, so we can do this reliably.
+  useEffect(() => {
+    if (loading || !trace || highlightIdx == null || tab !== 'messages') return;
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const id = requestAnimationFrame(() => {
+      const el = container.querySelector<HTMLElement>(`[data-msg-idx="${highlightIdx}"]`);
+      if (!el) return;
+      const containerRect = container.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      // Center the element in the scroll container
+      container.scrollTop += elRect.top - containerRect.top - containerRect.height / 2 + elRect.height / 2;
+    });
+    return () => cancelAnimationFrame(id);
+  }, [loading, trace, highlightIdx, tab]);
 
   if (loading) {
     return (
@@ -208,9 +240,9 @@ export default function TraceDetail({ traceId, pinnedTraceId, onPin }: Props) {
       </div>
 
       {/* ── Tab content ── */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4">
         {tab === 'messages' && (
-          <MessageViewer key={viewerKey} requestBody={trace.request_body} protocol={trace.protocol} expandOverride={allExpanded} />
+          <MessageViewer key={viewerKey} requestBody={trace.request_body} protocol={trace.protocol} expandOverride={allExpanded} highlightIdx={highlightIdx} />
         )}
         {tab === 'response' && (
           <ResponseViewer key={viewerKey} responseBody={trace.response_body} protocol={trace.protocol} expandDepth={expandDepth} />
@@ -227,7 +259,14 @@ export default function TraceDetail({ traceId, pinnedTraceId, onPin }: Props) {
         )}
         {tab === 'diff' && hasDiff && (
           pinnedTrace
-            ? <DiffViewer key={viewerKey} traceA={trace} traceB={pinnedTrace} expandOverride={allExpanded} />
+            ? <DiffViewer
+                key={viewerKey}
+                traceA={trace}
+                traceB={pinnedTrace}
+                expandOverride={allExpanded}
+                currentTraceId={traceId}
+                onJumpToMessage={onJumpToMessage}
+              />
             : <p className="text-gray-500 text-sm">加载基准 trace 中…</p>
         )}
         {tab === 'headers' && (

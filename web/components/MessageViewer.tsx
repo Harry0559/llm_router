@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, type ReactNode } from 'react';
+import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import JsonViewer from './JsonViewer';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -200,17 +200,26 @@ function renderSystemContent(system: unknown, expandDepth: number): ReactNode {
 
 // ─── Single Message ───────────────────────────────────────────────────────────
 
-function MessageCard({ msg, index, blockOpen, expandDepth }: {
+function MessageCard({ msg, index, blockOpen, expandDepth, highlighted = false, msgIdx, onHighlightMount }: {
   msg: Message; index: number; blockOpen?: boolean; expandDepth: number;
+  highlighted?: boolean; msgIdx: number;
+  /** Called with the DOM element when this card mounts and is highlighted. */
+  onHighlightMount?: (el: HTMLDivElement) => void;
 }) {
-  const style = ROLE_STYLE[msg.role] ?? 'border-gray-500/40 bg-gray-900/40';
+  const style = highlighted
+    ? 'border-yellow-400 bg-yellow-800/40 ring-2 ring-yellow-500/60'
+    : (ROLE_STYLE[msg.role] ?? 'border-gray-500/40 bg-gray-900/40');
   const labelColor = ROLE_COLOR[msg.role] ?? 'text-gray-400';
   const label = ROLE_LABEL[msg.role] ?? msg.role.toUpperCase();
 
   const content = msg.content;
 
   return (
-    <div className={`border rounded-md p-3 mb-2 ${style}`}>
+    <div
+      data-msg-idx={msgIdx}
+      ref={highlighted && onHighlightMount ? (el) => { if (el) onHighlightMount(el); } : undefined}
+      className={`border rounded-md p-3 mb-2 ${style}`}
+    >
       <div className="flex items-center gap-2 mb-2">
         <span className={`text-xs font-bold ${labelColor}`}>{label}</span>
         <span className="text-gray-600 text-xs">#{index}</span>
@@ -241,9 +250,11 @@ interface MessageViewerProps {
   requestBody: unknown;
   protocol: string;
   expandOverride?: 'collapsed' | 'default' | 'expanded';
+  /** 0-based message index to highlight and scroll into view. */
+  highlightIdx?: number | null;
 }
 
-export default function MessageViewer({ requestBody, protocol, expandOverride = 'default' }: MessageViewerProps) {
+export default function MessageViewer({ requestBody, protocol, expandOverride = 'default', highlightIdx }: MessageViewerProps) {
   const parsed = useMemo(() => {
     if (typeof requestBody === 'string') {
       try {
@@ -280,6 +291,9 @@ export default function MessageViewer({ requestBody, protocol, expandOverride = 
   const expandDepth = expandOverride === 'collapsed' ? 1 : expandOverride === 'default' ? 3 : 999;
   const blockOpen = expandOverride === 'expanded';
   const [toolsOpen, setToolsOpen] = useState(blockOpen);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // Scroll is handled by TraceDetail (which owns the scroll container ref).
 
   if (!parsed.ok) {
     return <pre className="text-xs text-gray-400">{parsed.raw}</pre>;
@@ -310,9 +324,20 @@ export default function MessageViewer({ requestBody, protocol, expandOverride = 
       )}
 
       {/* Messages */}
-      {messages.map((msg, i) => (
-        <MessageCard key={i} msg={msg} index={i} blockOpen={blockOpen} expandDepth={expandDepth} />
-      ))}
+      <div ref={listRef}>
+        {messages.map((msg, i) => (
+          <MessageCard
+            key={i}
+            msg={msg}
+            index={i}
+            blockOpen={blockOpen}
+            expandDepth={expandDepth}
+            highlighted={highlightIdx === i}
+            msgIdx={i}
+            onHighlightMount={(el) => el.scrollIntoView({ block: 'center', behavior: 'smooth' })}
+          />
+        ))}
+      </div>
 
       {/* Tools definition (collapsible) */}
       {tools && tools.length > 0 && (
