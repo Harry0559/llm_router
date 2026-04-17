@@ -145,7 +145,7 @@ export default function TraceList({
     <div className="flex flex-col h-full">
       {/* ── Header ── */}
       <div className="px-3 py-2 border-b border-gray-800 shrink-0 space-y-1.5">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-3 pr-10">
           <p className="text-xs text-gray-400">
             {loading ? '加载中…' : `${traces.filter(t => filter.has(t.agent_type)).length} / ${traces.length} trace${traces.length !== 1 ? 's' : ''}`}
           </p>

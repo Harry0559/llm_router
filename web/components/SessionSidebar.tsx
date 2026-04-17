@@ -69,6 +69,7 @@ export default function SessionSidebar({
 
   async function handleDelete(e: MouseEvent, id: string) {
     e.stopPropagation();
+    if (!confirm('删除这个 session 及其所有 runs / traces？')) return;
     await deleteSession(id);
     onDeleted(id);
   }
@@ -116,7 +117,7 @@ export default function SessionSidebar({
             {connected ? '● live' : '○ off'}
           </span>
         </div>
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-3 pr-10">
           <p className="text-xs text-gray-500">Sessions</p>
           {exportMode && (
             <div className="flex items-center gap-1">

@@ -54,6 +54,7 @@ export default function RunList({
 
   async function handleDelete(e: React.MouseEvent, id: string) {
     e.stopPropagation();
+    if (!confirm('删除这个 run 及其所有 traces？')) return;
     await deleteRun(id);
     onDeleted(id);
     setRuns(r => r.filter(x => x.id !== id));
@@ -68,7 +69,7 @@ export default function RunList({
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="px-3 py-2 border-b border-gray-800 shrink-0 space-y-1">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-3 pr-10">
           <p className="text-xs text-gray-400">
             {loading ? '加载中…' : `${runs.length} run${runs.length !== 1 ? 's' : ''}`}
           </p>
