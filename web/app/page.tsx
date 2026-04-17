@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Session } from '@/lib/types';
-import { fetchSessions, clearAllData, createEventSource } from '@/lib/api';
+import { clearAllData, createEventSource, downloadJsonFile, exportTraceBundle, fetchSessions } from '@/lib/api';
 import SessionSidebar from '@/components/SessionSidebar';
 import RunList from '@/components/RunList';
 import TraceList from '@/components/TraceList';
@@ -81,6 +81,10 @@ export default function HomePage() {
   const [col2Open, setCol2Open] = useState(true);
   const [col3Open, setCol3Open] = useState(true);
   const [jumpTarget, setJumpTarget] = useState<{ traceId: string; index: number } | null>(null);
+  const [exportMode, setExportMode] = useState(false);
+  const [selectedExportSessions, setSelectedExportSessions] = useState<Set<string>>(new Set());
+  const [selectedExportRuns, setSelectedExportRuns] = useState<Set<string>>(new Set());
+  const [selectedExportTraces, setSelectedExportTraces] = useState<Set<string>>(new Set());
 
   // Map traceId → { sessionId, runId } so onJumpToMessage can restore the correct column state.
   const [traceIdToLoc, setTraceIdToLoc] = useState<Record<string, { sessionId: string; runId: string }>>({});
@@ -92,6 +96,17 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => { loadSessions(); }, [loadSessions]);
+
+  useEffect(() => {
+    setSelectedExportSessions((prev) => {
+      const next = new Set<string>();
+      const available = new Set(sessions.map((session) => session.id));
+      for (const id of prev) {
+        if (available.has(id)) next.add(id);
+      }
+      return next;
+    });
+  }, [sessions]);
 
   // Populate traceId→location map for a batch of trace IDs.
   function populateTraceLocs(ids: string[]) {
@@ -294,6 +309,29 @@ export default function HomePage() {
     setSelectedTrace(null);
   }
 
+  async function handleExportSelected() {
+    const sessionIds = Array.from(selectedExportSessions);
+    const runIds = Array.from(selectedExportRuns);
+    const traceIds = Array.from(selectedExportTraces);
+    if (sessionIds.length === 0 && runIds.length === 0 && traceIds.length === 0) return;
+    const bundle = await exportTraceBundle({ sessionIds, runIds, traceIds });
+    downloadJsonFile('llm-router-selection.json', bundle);
+  }
+
+  const selectedExportCount = selectedExportSessions.size + selectedExportRuns.size + selectedExportTraces.size;
+
+  function handleToggleExportMode() {
+    setExportMode((prev) => {
+      const next = !prev;
+      if (!next) {
+        setSelectedExportSessions(new Set());
+        setSelectedExportRuns(new Set());
+        setSelectedExportTraces(new Set());
+      }
+      return next;
+    });
+  }
+
   return (
     <SettingsProvider>
     <div className="flex h-screen overflow-hidden bg-gray-950">
@@ -307,6 +345,27 @@ export default function HomePage() {
           onDeleted={handleDeletedSession}
           onClearAll={handleClearAll}
           connected={connected}
+          exportMode={exportMode}
+          selectedForExport={selectedExportSessions}
+          onToggleExport={(id) => {
+            setSelectedExportSessions((prev) => {
+              const next = new Set(prev);
+              if (next.has(id)) next.delete(id);
+              else next.add(id);
+              return next;
+            });
+          }}
+          onSelectAllExport={() => setSelectedExportSessions(new Set(sessions.map((session) => session.id)))}
+          onClearAllExport={() => setSelectedExportSessions(new Set())}
+          onToggleExportMode={handleToggleExportMode}
+          onExportSelected={() => void handleExportSelected()}
+          selectedExportCount={selectedExportCount}
+          onImported={() => {
+            loadSessions();
+            setSessionTick(t => t + 1);
+            setRunTick(t => t + 1);
+            setTraceTick(t => t + 1);
+          }}
         />
       </Col>
 
@@ -321,6 +380,36 @@ export default function HomePage() {
             onSelectAll={handleSelectAllTraces}
             onDeleted={handleDeletedRun}
             refreshTick={runTick}
+            exportMode={exportMode}
+            sessionSelectedForExport={selectedExportSessions.has(selectedSession)}
+            selectedForExport={selectedExportRuns}
+            onToggleExport={(id) => {
+              setSelectedExportRuns((prev) => {
+                const next = new Set(prev);
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+                return next;
+              });
+            }}
+            onSelectAllExport={(runIds) => {
+              setSelectedExportRuns((prev) => {
+                const next = new Set(prev);
+                for (const id of runIds) next.add(id);
+                return next;
+              });
+            }}
+            onClearAllExport={(runIds) => {
+              setSelectedExportRuns((prev) => {
+                const next = new Set(prev);
+                for (const id of runIds) next.delete(id);
+                return next;
+              });
+              setSelectedExportSessions((prev) => {
+                const next = new Set(prev);
+                next.delete(selectedSession);
+                return next;
+              });
+            }}
           />
         ) : (
           <div className="flex items-center justify-center h-full text-gray-700 text-xs text-center p-4">
@@ -339,6 +428,37 @@ export default function HomePage() {
             onSelect={(id) => { setSelectedTrace(id); setJumpTarget(null); }}
             refreshTick={traceTick}
             onSource={handleTraceListSource}
+            exportMode={exportMode}
+            selectedSessionIds={selectedExportSessions}
+            selectedRunIds={selectedExportRuns}
+            selectedTraceIds={selectedExportTraces}
+            onToggleExport={(id) => {
+              setSelectedExportTraces((prev) => {
+                const next = new Set(prev);
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+                return next;
+              });
+            }}
+            onSelectAllExport={(traceIds) => {
+              setSelectedExportTraces((prev) => {
+                const next = new Set(prev);
+                for (const id of traceIds) next.add(id);
+                return next;
+              });
+            }}
+            onClearAllExport={(traceIds) => {
+              setSelectedExportTraces((prev) => {
+                const next = new Set(prev);
+                for (const id of traceIds) next.delete(id);
+                return next;
+              });
+              setSelectedExportRuns((prev) => {
+                const next = new Set(prev);
+                if (selectedRun) next.delete(selectedRun);
+                return next;
+              });
+            }}
           />
         ) : allTraces && selectedSession ? (
           <TraceList
@@ -348,6 +468,37 @@ export default function HomePage() {
             onSelect={(id) => { setSelectedTrace(id); setJumpTarget(null); }}
             refreshTick={traceTick}
             onSource={handleTraceListSource}
+            exportMode={exportMode}
+            selectedSessionIds={selectedExportSessions}
+            selectedRunIds={selectedExportRuns}
+            selectedTraceIds={selectedExportTraces}
+            onToggleExport={(id) => {
+              setSelectedExportTraces((prev) => {
+                const next = new Set(prev);
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+                return next;
+              });
+            }}
+            onSelectAllExport={(traceIds) => {
+              setSelectedExportTraces((prev) => {
+                const next = new Set(prev);
+                for (const id of traceIds) next.add(id);
+                return next;
+              });
+            }}
+            onClearAllExport={(traceIds) => {
+              setSelectedExportTraces((prev) => {
+                const next = new Set(prev);
+                for (const id of traceIds) next.delete(id);
+                return next;
+              });
+              setSelectedExportSessions((prev) => {
+                const next = new Set(prev);
+                next.delete(selectedSession);
+                return next;
+              });
+            }}
           />
         ) : (
           <div className="flex items-center justify-center h-full text-gray-700 text-xs text-center p-4">

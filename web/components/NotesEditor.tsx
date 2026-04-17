@@ -7,9 +7,10 @@ interface Props {
   onSave: (notes: string) => Promise<void>;
   /** compact=true: 2-row textarea，适合窄列（Session/Run）；false: 3-row，适合宽面板（Trace） */
   compact?: boolean;
+  active?: boolean;
 }
 
-export default function NotesEditor({ notes, onSave, compact = false }: Props) {
+export default function NotesEditor({ notes, onSave, compact = false, active = true }: Props) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(notes ?? '');
   const [saving, setSaving] = useState(false);
@@ -48,30 +49,72 @@ export default function NotesEditor({ notes, onSave, compact = false }: Props) {
     }
   }
 
+  function previewText(text: string): string {
+    const normalized = text.replace(/\s+/g, ' ').trim();
+    const limit = compact ? 80 : 160;
+    if (normalized.length <= limit) return normalized;
+    return `${normalized.slice(0, limit)}…`;
+  }
+
   if (!editing) {
+    if (!notes && !active) return null;
+
+    const hasNotes = Boolean(notes && notes.trim());
+    const canEdit = active;
+    const displayText = hasNotes ? (canEdit ? notes! : previewText(notes!)) : '';
     return (
-      <button
-        type="button"
-        onClick={() => setEditing(true)}
-        className="w-full text-left flex items-start gap-1 group min-w-0"
-        title={notes ? '点击编辑备注' : '点击添加备注'}
-      >
-        <span className={`text-[10px] shrink-0 mt-0.5 ${notes ? 'text-yellow-600' : 'text-gray-700 group-hover:text-gray-500'} transition-colors`}>
-          📝
-        </span>
-        {notes ? (
-          <span className="text-[10px] text-yellow-600/80 leading-tight break-all line-clamp-2">{notes}</span>
+      <div className="w-full text-left group min-w-0">
+        {hasNotes ? (
+          <div
+            role={canEdit ? 'button' : undefined}
+            tabIndex={canEdit ? 0 : undefined}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!canEdit) return;
+              setEditing(true);
+            }}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (!canEdit) return;
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setEditing(true);
+              }
+            }}
+            className={`block w-full text-left text-[10px] text-yellow-600/80 leading-tight break-all ${canEdit ? 'hover:text-yellow-400 transition-colors cursor-pointer' : 'cursor-default'}`}
+            title={canEdit ? '点击编辑备注' : undefined}
+          >
+            {displayText}
+          </div>
         ) : (
-          <span className="text-[10px] text-gray-700 group-hover:text-gray-500 transition-colors leading-tight">
+          <div
+            role={canEdit ? 'button' : undefined}
+            tabIndex={canEdit ? 0 : undefined}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!canEdit) return;
+              setEditing(true);
+            }}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (!canEdit) return;
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setEditing(true);
+              }
+            }}
+            className={`text-[10px] transition-colors leading-tight ${canEdit ? 'text-gray-700 group-hover:text-gray-500 cursor-pointer' : 'text-gray-700 cursor-default'}`}
+            title={canEdit ? '点击添加备注' : undefined}
+          >
             添加备注…
-          </span>
+          </div>
         )}
-      </button>
+      </div>
     );
   }
 
   return (
-    <div className="w-full">
+    <div className="w-full" onClick={(e) => e.stopPropagation()}>
       <textarea
         ref={taRef}
         value={value}
@@ -84,7 +127,10 @@ export default function NotesEditor({ notes, onSave, compact = false }: Props) {
       <div className="flex gap-1.5 mt-1">
         <button
           type="button"
-          onClick={handleSave}
+          onClick={(e) => {
+            e.stopPropagation();
+            void handleSave();
+          }}
           disabled={saving}
           className="text-[10px] px-2 py-0.5 bg-yellow-700/30 text-yellow-400 border border-yellow-700/50 rounded hover:bg-yellow-700/50 transition-colors disabled:opacity-50"
         >
@@ -92,7 +138,11 @@ export default function NotesEditor({ notes, onSave, compact = false }: Props) {
         </button>
         <button
           type="button"
-          onClick={() => { setValue(notes ?? ''); setEditing(false); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setValue(notes ?? '');
+            setEditing(false);
+          }}
           className="text-[10px] px-2 py-0.5 text-gray-500 hover:text-gray-300 transition-colors"
         >
           取消

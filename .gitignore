@@ -14,6 +14,7 @@ web/tsconfig.tsbuildinfo
 proxy/data/*.db
 proxy/data/*.db-shm
 proxy/data/*.db-wal
+proxy/dist/
 
 # Local Claude Code / agent config (do not commit)
 .claude/

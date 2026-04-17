@@ -44,6 +44,30 @@ export async function clearAllData(): Promise<void> {
   await fetch(`${BASE}/api/data/all`, { method: 'DELETE' });
 }
 
+export async function regroupInnerCCOpenAI(): Promise<{ ok: true; sessions: number; runs: number; traces: number }> {
+  const r = await fetch(`${BASE}/api/data/regroup-innercc-openai`, { method: 'POST' });
+  if (!r.ok) throw new Error(`regroup: ${r.status}`);
+  return r.json() as Promise<{ ok: true; sessions: number; runs: number; traces: number }>;
+}
+
+export interface TraceBundleExport {
+  version: number;
+  exported_at: number;
+  scope: {
+    session_ids: string[];
+    run_ids: string[];
+    trace_ids: string[];
+  };
+  counts: {
+    sessions: number;
+    runs: number;
+    traces: number;
+  };
+  sessions: unknown[];
+  runs: unknown[];
+  traces: unknown[];
+}
+
 export async function updateSessionNotes(id: string, notes: string): Promise<void> {
   await fetch(`${BASE}/api/sessions/${id}/notes`, {
     method: 'PATCH',
@@ -66,6 +90,54 @@ export async function updateTraceNotes(id: string, notes: string): Promise<void>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ notes }),
   });
+}
+
+export async function exportTraceBundle(params: {
+  sessionIds?: string[];
+  runIds?: string[];
+  traceIds?: string[];
+}): Promise<TraceBundleExport> {
+  const r = await fetch(`${BASE}/api/export`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      session_ids: params.sessionIds ?? [],
+      run_ids: params.runIds ?? [],
+      trace_ids: params.traceIds ?? [],
+    }),
+  });
+  if (!r.ok) throw new Error(`export: ${r.status}`);
+  return r.json() as Promise<TraceBundleExport>;
+}
+
+export async function importTraceBundle(bundle: unknown): Promise<{ ok: true; sessions: number; runs: number; traces: number }> {
+  const r = await fetch(`${BASE}/api/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(bundle),
+  });
+  if (!r.ok) {
+    let message = `import: ${r.status}`;
+    try {
+      const payload = await r.json() as { error?: string };
+      if (payload.error) message = payload.error;
+    } catch {
+      // Ignore parse failure.
+    }
+    throw new Error(message);
+  }
+  return r.json() as Promise<{ ok: true; sessions: number; runs: number; traces: number }>;
+}
+
+export function downloadJsonFile(filename: string, value: unknown): void {
+  const text = JSON.stringify(value, null, 2);
+  const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export function createEventSource(): EventSource {

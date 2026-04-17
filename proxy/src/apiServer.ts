@@ -4,9 +4,13 @@ import { addSseClient } from './broadcast';
 import {
   querySessions,
   queryRunsBySession,
+  queryRunById,
   queryTracesByRun,
   queryTracesBySession,
   queryTraceById,
+  exportTraceBundle,
+  importTraceBundle,
+  regroupInnerCCOpenAIUnknownTraces,
   deleteSession,
   deleteRun,
   clearAll,
@@ -18,7 +22,7 @@ import {
 export function createApiApp(): express.Application {
   const app = express();
   app.use(cors());
-  app.use(express.json());
+  app.use(express.json({ limit: '200mb' }));
 
   // ── SSE: real-time events ──────────────────────────────────────────────
   app.get('/api/events', (req, res) => {
@@ -56,6 +60,12 @@ export function createApiApp(): express.Application {
     res.json(queryRunsBySession(req.params.id));
   });
 
+  app.get('/api/runs/:id', (req, res) => {
+    const run = queryRunById(req.params.id);
+    if (!run) return res.status(404).json({ error: 'not found' });
+    return res.json(run);
+  });
+
   app.delete('/api/runs/:id', (req, res) => {
     deleteRun(req.params.id);
     res.json({ ok: true });
@@ -87,6 +97,39 @@ export function createApiApp(): express.Application {
     const { notes } = req.body as { notes: string };
     updateTraceNotes(req.params.id, notes ?? '');
     res.json({ ok: true });
+  });
+
+  app.post('/api/export', (req, res) => {
+    const { session_ids, run_ids, trace_ids } = req.body as {
+      session_ids?: string[];
+      run_ids?: string[];
+      trace_ids?: string[];
+    };
+
+    const bundle = exportTraceBundle({
+      sessionIds: session_ids ?? [],
+      runIds: run_ids ?? [],
+      traceIds: trace_ids ?? [],
+    });
+    res.json(bundle);
+  });
+
+  app.post('/api/import', (req, res) => {
+    try {
+      const result = importTraceBundle(req.body);
+      res.json({ ok: true, ...result });
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : 'import failed' });
+    }
+  });
+
+  app.post('/api/data/regroup-innercc-openai', (_req, res) => {
+    try {
+      const result = regroupInnerCCOpenAIUnknownTraces();
+      res.json({ ok: true, ...result });
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : 'regroup failed' });
+    }
   });
 
   // ── Admin ──────────────────────────────────────────────────────────────

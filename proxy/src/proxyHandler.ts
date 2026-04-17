@@ -5,6 +5,11 @@ import { UPSTREAM_URL, PROXY_PORT } from './config';
 import { resolveSession, resolveRun, insertTrace } from './db';
 import { broadcast } from './broadcast';
 import {
+  classifyAgentType,
+  resolveRunSignal,
+  resolveSessionSignal,
+} from './heuristics';
+import {
   assembleAnthropicStream, getAnthropicTokens,
   assembleOpenAIStream, getOpenAITokens,
 } from './streamAssembler';
@@ -13,62 +18,6 @@ import {
 const STRIP_HEADERS = new Set([
   'host', 'content-length', 'connection',
 ]);
-
-// ────────── session / run signal extraction ──────────
-
-/**
- * Read metadata.user_id (JSON string) → parse → return session_id field.
- * Falls back to "__unknown__" if the field is absent or malformed.
- */
-function extractExternalSessionId(body: Record<string, unknown>): string {
-  try {
-    const metadata = (body.metadata ?? {}) as Record<string, unknown>;
-    const raw = metadata.user_id as string | undefined;
-    if (!raw) return '__unknown__';
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const sid = parsed.session_id as string | undefined;
-    return sid || '__unknown__';
-  } catch {
-    return '__unknown__';
-  }
-}
-
-export type AgentType = 'main_agent' | 'subagent' | 'title_gen';
-
-/**
- * Classify the caller based on the tools array:
- *   - no tools           → title_gen  (CC title-generation call)
- *   - tools includes     → main_agent (only main agent holds the Agent tool)
- *     name === 'Agent'
- *   - tools but no Agent → subagent
- */
-function classifyAgentType(body: Record<string, unknown>): AgentType {
-  const tools = body.tools as { name: string }[] | undefined;
-  if (!tools || tools.length === 0) return 'title_gen';
-  if (tools.some(t => t.name === 'Agent')) return 'main_agent';
-  return 'subagent';
-}
-
-/**
- * A new run starts only when the main agent receives a fresh user message
- * (last message role=user with all-text content, no tool_result).
- * Subagent and title_gen traces never open a new run.
- */
-function isNewRunStart(body: Record<string, unknown>, agentType: AgentType): boolean {
-  if (agentType !== 'main_agent') return false;
-
-  const messages = body.messages as unknown[] | undefined;
-  if (!messages || messages.length === 0) return true;
-
-  const last = messages[messages.length - 1] as Record<string, unknown>;
-  if (last.role !== 'user') return false;
-
-  const content = last.content;
-  if (typeof content === 'string') return true;
-  if (!Array.isArray(content) || content.length === 0) return false;
-
-  return (content as Record<string, unknown>[]).every(item => item.type === 'text');
-}
 
 // ────────── request helpers ──────────
 
@@ -88,10 +37,10 @@ async function handleProxy(req: Request, res: Response, protocol: 'anthropic' | 
   const startTime = Date.now();
 
   const requestBody = req.body as Record<string, unknown>;
-  const externalId  = extractExternalSessionId(requestBody);
+  const externalId  = resolveSessionSignal(requestBody, protocol, startTime);
   const sessionId   = resolveSession(externalId);
   const agentType   = classifyAgentType(requestBody);
-  const isNew       = isNewRunStart(requestBody, agentType);
+  const isNew       = resolveRunSignal(requestBody, protocol, externalId, agentType, startTime);
   const runId       = resolveRun(sessionId, isNew);
 
   const isStreaming    = requestBody.stream === true;

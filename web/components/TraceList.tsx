@@ -2,10 +2,11 @@
 
 import { useEffect, useState, useRef } from 'react';
 import type { TraceSummary } from '@/lib/types';
-import { fetchRunTraces, fetchSessionTraces } from '@/lib/api';
+import { fetchRunTraces, fetchSessionTraces, updateTraceNotes } from '@/lib/api';
 import Sparkline from './Sparkline';
 import { CompactMeter, useTokenColor } from './ContextMeter';
 import { useSettings } from '@/contexts/SettingsContext';
+import NotesEditor from './NotesEditor';
 
 interface Props {
   source: { type: 'run'; runId: string } | { type: 'session'; sessionId: string };
@@ -13,6 +14,13 @@ interface Props {
   pinnedId: string | null;
   onSelect: (id: string) => void;
   refreshTick: number;
+  exportMode: boolean;
+  selectedSessionIds: Set<string>;
+  selectedRunIds: Set<string>;
+  selectedTraceIds: Set<string>;
+  onToggleExport: (id: string) => void;
+  onSelectAllExport: (traceIds: string[]) => void;
+  onClearAllExport: (traceIds: string[]) => void;
   /** Called with the source and loaded trace IDs after traces are fetched. */
   onSource?: (source: Props['source'], ids: string[]) => void;
 }
@@ -63,10 +71,25 @@ function TokenInfo({ tokensInput, tokensOutput, model }: {
   );
 }
 
-export default function TraceList({ source, selectedId, pinnedId, onSelect, refreshTick, onSource }: Props) {
+export default function TraceList({
+  source,
+  selectedId,
+  pinnedId,
+  onSelect,
+  refreshTick,
+  exportMode,
+  selectedSessionIds,
+  selectedRunIds,
+  selectedTraceIds,
+  onToggleExport,
+  onSelectAllExport,
+  onClearAllExport,
+  onSource,
+}: Props) {
   const { settings } = useSettings();
   const [traces, setTraces] = useState<TraceSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [notesOverride, setNotesOverride] = useState<Record<string, string | null>>({});
   const [filter, setFilter] = useState<Set<TraceSummary['agent_type']>>(
     new Set(['main_agent', 'subagent', 'title_gen'])
   );
@@ -88,6 +111,17 @@ export default function TraceList({ source, selectedId, pinnedId, onSelect, refr
     req.then(t => { setTraces(t); onSource?.(source, t.map(x => x.id)); }).catch(console.error).finally(() => setLoading(false));
   }, [source.type, source.type === 'run' ? source.runId : source.sessionId, refreshTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    setNotesOverride((prev) => {
+      const next: Record<string, string | null> = {};
+      const available = new Set(traces.map((trace) => trace.id));
+      for (const [id, value] of Object.entries(prev)) {
+        if (available.has(id)) next[id] = value;
+      }
+      return next;
+    });
+  }, [traces]);
+
   // Scroll to bottom when new traces arrive
   useEffect(() => {
     if (listRef.current) {
@@ -102,14 +136,39 @@ export default function TraceList({ source, selectedId, pinnedId, onSelect, refr
     el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [selectedId]);
 
+  async function handleSaveNotes(traceId: string, notes: string) {
+    await updateTraceNotes(traceId, notes);
+    setNotesOverride((prev) => ({ ...prev, [traceId]: notes || null }));
+  }
+
   return (
     <div className="flex flex-col h-full">
       {/* ── Header ── */}
       <div className="px-3 py-2 border-b border-gray-800 shrink-0 space-y-1.5">
-        <p className="text-xs text-gray-400">
-          {loading ? '加载中…' : `${traces.filter(t => filter.has(t.agent_type)).length} / ${traces.length} trace${traces.length !== 1 ? 's' : ''}`}
-        </p>
-        <div className="flex gap-1">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs text-gray-400">
+            {loading ? '加载中…' : `${traces.filter(t => filter.has(t.agent_type)).length} / ${traces.length} trace${traces.length !== 1 ? 's' : ''}`}
+          </p>
+          {exportMode && (
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => onSelectAllExport(traces.map((trace) => trace.id))}
+                className="text-[10px] text-gray-500 hover:text-gray-200"
+              >
+                全选
+              </button>
+              <button
+                type="button"
+                onClick={() => onClearAllExport(traces.map((trace) => trace.id))}
+                className="text-[10px] text-gray-600 hover:text-gray-300"
+              >
+                清空
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="flex gap-1 flex-wrap">
           {FILTER_TYPES.map(({ key, label, active, inactive }) => (
             <button
               key={key}
@@ -140,46 +199,68 @@ export default function TraceList({ source, selectedId, pinnedId, onSelect, refr
           <p className="text-gray-600 text-xs text-center py-8">暂无 trace</p>
         )}
 
-        {traces.filter(t => filter.has(t.agent_type)).map((trace, idx) => (
-          <button
-            key={trace.id}
-            data-trace-id={trace.id}
-            onClick={() => onSelect(trace.id)}
-            className={`relative w-full text-left px-3 py-2.5 border-b border-gray-800/50 overflow-hidden transition-colors ${
-              selectedId === trace.id
-                ? 'bg-blue-900/20 border-l-2 border-l-blue-500'
-                : pinnedId === trace.id
-                ? 'bg-orange-900/10 border-l-2 border-l-orange-500'
-                : 'hover:bg-gray-800/40 border-l-2 border-l-transparent'
-            }`}
-          >
-            <div className="flex items-center gap-1.5 mb-1">
-              <StatusDot status={trace.response_status} />
-              <AgentBadge agentType={trace.agent_type} />
-              <span className="text-xs text-gray-400 font-semibold">{trace.request_method}</span>
-              <span className="text-xs text-gray-500 truncate flex-1">{trace.request_path}</span>
-              <span className="text-xs text-gray-500 shrink-0">#{idx + 1}</span>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-gray-600">
-              <span>{timeStr(trace.timestamp)}</span>
-              <span>{trace.duration_ms}ms</span>
-              {trace.tokens_input > 0 && (
-                <TokenInfo
-                  tokensInput={trace.tokens_input}
-                  tokensOutput={trace.tokens_output}
-                  model={trace.model}
+        {traces.filter(t => filter.has(t.agent_type)).map((trace, idx) => {
+          const inheritedSelected = selectedSessionIds.has(trace.session_id) || selectedRunIds.has(trace.run_id);
+          const traceSelected = inheritedSelected || selectedTraceIds.has(trace.id);
+
+          return (
+            <button
+              key={trace.id}
+              data-trace-id={trace.id}
+              onClick={() => onSelect(trace.id)}
+              className={`relative w-full text-left px-3 py-2.5 border-b border-gray-800/50 overflow-hidden transition-colors ${
+                selectedId === trace.id
+                  ? 'bg-blue-900/20 border-l-2 border-l-blue-500'
+                  : pinnedId === trace.id
+                  ? 'bg-orange-900/10 border-l-2 border-l-orange-500'
+                  : 'hover:bg-gray-800/40 border-l-2 border-l-transparent'
+              }`}
+            >
+              <div className="flex items-center gap-1.5 mb-1">
+                <input
+                  type="checkbox"
+                  checked={traceSelected}
+                  disabled={inheritedSelected}
+                  onChange={() => onToggleExport(trace.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  className={`${exportMode ? 'accent-blue-500' : 'hidden'}`}
+                  title="加入导出选择"
                 />
+                <StatusDot status={trace.response_status} />
+                <AgentBadge agentType={trace.agent_type} />
+                <span className="text-xs text-gray-400 font-semibold">{trace.request_method}</span>
+                <span className="text-xs text-gray-500 truncate flex-1" title={trace.request_path}>{trace.request_path}</span>
+                <span className="text-xs text-gray-500 shrink-0">#{idx + 1}</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-gray-600">
+                <span>{timeStr(trace.timestamp)}</span>
+                <span>{trace.duration_ms}ms</span>
+                {trace.tokens_input > 0 && (
+                  <TokenInfo
+                    tokensInput={trace.tokens_input}
+                    tokensOutput={trace.tokens_output}
+                    model={trace.model}
+                  />
+                )}
+              </div>
+              {trace.model && (
+                <div className="text-xs text-gray-700 mt-0.5 truncate" title={trace.model}>{trace.model}</div>
               )}
-            </div>
-            {trace.model && (
-              <div className="text-xs text-gray-700 mt-0.5 truncate">{trace.model}</div>
-            )}
-            {/* Context meter bar (2px absolute bottom) */}
-            {trace.tokens_input > 0 && trace.model && (
-              <CompactMeter tokensInput={trace.tokens_input} model={trace.model} />
-            )}
-          </button>
-        ))}
+              {/* Context meter bar (2px absolute bottom) */}
+              {trace.tokens_input > 0 && trace.model && (
+                <CompactMeter tokensInput={trace.tokens_input} model={trace.model} />
+              )}
+              <div className="mt-1.5 pt-1.5 border-t border-gray-800/80" onClick={(e) => e.stopPropagation()}>
+                <NotesEditor
+                  compact
+                  notes={notesOverride[trace.id] !== undefined ? notesOverride[trace.id] : trace.notes}
+                  onSave={(n) => handleSaveNotes(trace.id, n)}
+                  active={selectedId === trace.id}
+                />
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

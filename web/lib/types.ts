@@ -1,6 +1,7 @@
 export interface Session {
   id: string;
   external_id: string;   // session_id from metadata.user_id
+  display_name?: string;
   created_at: number;
   updated_at: number;
   run_count: number;
@@ -10,6 +11,7 @@ export interface Session {
 export interface Run {
   id: string;
   session_id: string;
+  display_name?: string;
   created_at: number;
   updated_at: number;
   trace_count: number;
